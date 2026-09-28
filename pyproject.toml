@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 api = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
 figures = ["matplotlib>=3.8"]
+ml = ["torch>=2.5"]  # U-Net et étude des métriques (python -m vaisseaux.unet / vaisseaux.etude)
 demo = ["gradio>=5", "huggingface_hub>=0.23"]  # démo Gradio et déploiement du Space
 dev = ["vaisseaux[api,figures]", "pytest>=8", "httpx>=0.27", "ruff>=0.5"]
 

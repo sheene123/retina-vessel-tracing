@@ -119,6 +119,22 @@ tracés. Les mesures pixel et la tâche ne racontent pas la même histoire. Inte
 confiance, tests et analyse : [resultats/evaluation.md](resultats/evaluation.md) et
 [docs/evaluation.md](docs/evaluation.md#6-ce-que-disent-les-résultats).
 
+## Étude : les métriques de segmentation prédisent-elles les mesures cliniques ?
+
+En oculomique, on mesure les vaisseaux (calibre, tortuosité, dimension fractale…) comme marqueurs
+de santé, sur des segmentations choisies pour leur Dice. L'étude
+([docs/etude_metriques.md](docs/etude_metriques.md)) compare 19 méthodes, dont un U-Net
+(Dice 0,82) et des perturbations contrôlées, sur 380 segmentations et 8 marqueurs.
+
+- Parmi les segmenteurs réels, le Dice prédit le calibre (+0,81) et la fragmentation (+0,82),
+  mais **pas la tortuosité (+0,07), les bifurcations (-0,18) ni le tracé (+0,02)**.
+- Le Dice reste à 0,98 avec 60 coupures dans les vaisseaux ; le clDice reste à 0,999 quand le
+  calibre est faux de 35 %. Les deux métriques ont des angles morts complémentaires.
+- À Dice égal, le seuil du U-Net change l'erreur de calibre du simple au double : il faut le
+  choisir selon le marqueur.
+
+![Pouvoir prédictif des métriques](resultats/etude_metriques/pouvoir_predictif_segmenteurs_reels.png)
+
 ## Démarrage rapide
 
 ```bash
@@ -128,6 +144,7 @@ pip install -e ".[dev]"
 python scripts/telecharger_drive.py          # ou --zip DRIVE.zip (archive officielle)
 pytest                                       # tests (images synthétiques, pas besoin de DRIVE)
 python -m vaisseaux.benchmark                # évaluation complète sur DRIVE
+pip install -e ".[ml]" && python -m vaisseaux.unet && python -m vaisseaux.etude   # étude des métriques
 uvicorn vaisseaux.api:app --reload           # API en local
 ```
 
@@ -139,6 +156,9 @@ src/vaisseaux/
   pretraitement.py   CLAHE, débruitage, filtre de Frangi
   graphe.py          carte de coût, Dijkstra, A*
   evaluation.py      métriques de tracé et de segmentation, bootstrap, Wilcoxon
+  biomarqueurs.py    marqueurs vasculaires (densité, dimension fractale, calibre, tortuosité…)
+  unet.py            U-Net de segmentation (PyTorch, optionnel)
+  etude.py           étude « métriques de segmentation contre marqueurs »
   benchmark.py       protocole d'évaluation entraînement / test
   api.py             API FastAPI
 scripts/             téléchargement de DRIVE, figure, déploiement du Space
@@ -153,7 +173,8 @@ resultats/           résultats versionnés du dernier benchmark
 - [x] API FastAPI, image Docker, CI GitHub Actions
 - [x] Protocole d'évaluation : métriques de tracé, bootstrap par image, tests appariés
 - [ ] Prétraitement : réglage adaptatif du débruitage, correction d'illumination
-- [ ] Coût appris (petit réseau de segmentation) à la place du filtre de Frangi
+- [x] U-Net de segmentation et étude « métriques contre marqueurs vasculaires »
+- [ ] Coût du tracé tiré du U-Net, et U-Net dans la démo web (ONNX)
 - [ ] Évaluation : second observateur (archive officielle), tolérance adaptée au calibre
       du vaisseau, étiquettes artère/veine pour vérifier l'identité du vaisseau aux
       croisements
