@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tracé des vaisseaux rétiniens</title>
+<meta name="description" content="Cliquez deux points sur un fond d'œil : un plus court chemin sur le graphe des pixels suit le vaisseau. Calcul 100 % dans le navigateur.">
+<style>
+  :root {
+    --fond: #f6f6f3; --surface: #ffffff; --texte: #1c1c1f; --texte-2: #5a5a62; --bord: #deded8;
+    --accent: #0b6e99; --accent-texte: #ffffff; --alerte: #a63d00;
+    --trace-a: #00c2ee; --trace-b: #f5c400;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fond: #121214; --surface: #1c1c20; --texte: #ececf1; --texte-2: #a3a3ad; --bord: #303036;
+      --accent: #5bb6e3; --accent-texte: #0d1a22; --alerte: #ffb07a;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fond); color: var(--texte); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  header, main, .bloc, footer { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+  header { padding-top: 28px; }
+  h1 { font-size: 1.6rem; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--texte-2); margin: 18px 0 8px; }
+  h2:first-child { margin-top: 0; }
+  .intro { max-width: 75ch; margin: 0 0 6px; }
+  .meta { color: var(--texte-2); font-size: 0.9rem; margin: 0 0 16px; }
+  .bandeau { max-width: 1180px; margin: 0 auto 16px; padding: 10px 16px; border-radius: 8px; background: var(--surface); border: 1px solid var(--bord); color: var(--texte-2); }
+  .bandeau.erreur { color: var(--alerte); }
+  main { display: grid; grid-template-columns: 290px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } .visuel { order: -1; } }
+  .panneau, .visuel, .bloc > .carte { background: var(--surface); border: 1px solid var(--bord); border-radius: 10px; padding: 16px; }
+  .rangee { display: flex; flex-wrap: wrap; gap: 6px; }
+  button, select, .fichier { font: inherit; color: var(--texte); background: var(--fond); border: 1px solid var(--bord); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button:hover:not(:disabled), .fichier:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.actif { background: var(--accent); color: var(--accent-texte); border-color: var(--accent); }
+  button.principal { background: var(--accent); color: var(--accent-texte); border-color: var(--accent); }
+  .fichier { display: inline-block; margin-top: 8px; }
+  .fichier input { display: none; }
+  label.champ { display: block; margin: 8px 0; font-size: 0.92rem; }
+  label.champ select, label.champ input[type=range] { width: 100%; margin-top: 3px; }
+  .case { display: flex; gap: 6px; align-items: center; margin: 10px 0 2px; font-size: 0.92rem; }
+  .visuel { min-width: 0; }
+  .aide { margin: 0 0 10px; color: var(--texte-2); min-height: 1.5em; }
+  canvas { display: block; width: 100%; max-width: 760px; height: auto; margin: 0 auto; border-radius: 6px; cursor: crosshair; background: #000; touch-action: manipulation; }
+  .legende { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin: 10px 0 4px; font-size: 0.88rem; color: var(--texte-2); }
+  .pastille { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  .tableau { overflow-x: auto; margin-top: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--bord); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--texte-2); font-weight: 600; }
+  .note { font-size: 0.85rem; color: var(--texte-2); margin: 8px 0 0; }
+  .bloc { margin-top: 16px; }
+  .galerie { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-top: 12px; }
+  .galerie figure { margin: 0; }
+  .galerie img { width: 100%; border-radius: 6px; background: #000; display: block; }
+  .galerie figcaption { font-size: 0.85rem; margin-top: 4px; }
+  .galerie .scores { color: var(--texte-2); font-variant-numeric: tabular-nums; }
+  footer { color: var(--texte-2); font-size: 0.85rem; padding: 24px 16px 40px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tracé des vaisseaux rétiniens par plus court chemin</h1>
+  <p class="intro">Cliquez <strong>deux points</strong> sur un vaisseau. L'image est modélisée comme un graphe
+    dont chaque pixel est un sommet, et un plus court chemin (Dijkstra ou A*) suit le vaisseau de l'un à l'autre.
+    Comparez les prétraitements, confrontez le tracé à l'annotation d'un expert, ou essayez votre propre image.</p>
+  <p class="meta"><a href="https://github.com/sheene123/retina-vessel-tracing">Code source et protocole d'évaluation</a> ·
+    Tout le calcul se fait dans votre navigateur : vos images ne quittent pas votre ordinateur.</p>
+</header>
+
+<div id="bandeau" class="bandeau" role="status">Chargement de Python dans le navigateur (Pyodide, numpy, scipy, scikit-image : environ 35 Mo, de 20 à 60 s à la première visite)…</div>
+
+<main>
+  <section class="panneau" aria-label="Réglages">
+    <h2>1. Image</h2>
+    <div class="rangee" id="exemples"></div>
+    <label class="fichier">Votre image (JPEG, PNG, TIFF)…<input type="file" id="fichier" accept="image/*,.tif,.tiff"></label>
+    <p class="note">Les images DRIVE ont une annotation experte : le tracé est alors noté.</p>
+
+    <h2>2. Affichage</h2>
+    <div class="rangee" id="vues" role="group" aria-label="Vue affichée"></div>
+
+    <h2>3. Tracé</h2>
+    <label class="champ">Prétraitement A <select id="configA"></select></label>
+    <label class="case"><input type="checkbox" id="comparer" checked> Comparer avec un prétraitement B</label>
+    <label class="champ">Prétraitement B <select id="configB"></select></label>
+    <label class="champ">Algorithme
+      <select id="algo"><option value="a_etoile">A* (heuristique octile)</option><option value="dijkstra">Dijkstra</option></select>
+    </label>
+    <label class="champ">α, contraste du coût : <output id="alphaValeur">1</output>
+      <input type="range" id="alpha" min="0.5" max="4" step="0.5" value="1">
+    </label>
+    <button id="effacer" type="button">Effacer les points</button>
+  </section>
+
+  <section class="visuel" aria-label="Image et résultats">
+    <p class="aide" id="aide">…</p>
+    <canvas id="toile" width="565" height="584" aria-label="Image de fond d'œil ; cliquez deux points"></canvas>
+    <div class="legende" id="legende"></div>
+    <div class="tableau"><table id="resultats"></table></div>
+    <p class="note" id="noteResultats"></p>
+  </section>
+</main>
+
+<section class="bloc">
+  <div class="carte">
+    <h2>Comparer les six prétraitements</h2>
+    <p class="note" style="margin-top:0">Carte « vaisseaux » (filtre de Frangi) produite par chaque chaîne. Sur une image DRIVE, AUC et MCC
+      mesurés face à l'annotation experte, dans le champ de vue, avec le seuil choisi sur les images d'entraînement.
+      Sur le jeu de test complet, <strong>la meilleure carte au pixel ne donne pas le meilleur tracé</strong> :
+      <a href="https://github.com/sheene123/retina-vessel-tracing/blob/main/docs/evaluation.md">voir l'analyse</a>.</p>
+    <button id="lancerGalerie" class="principal" type="button" disabled>Calculer les 6 cartes</button>
+    <div class="galerie" id="galerie"></div>
+  </div>
+</section>
+
+<footer>
+  Images d'exemple : jeu de test public DRIVE, J. Staal et al., <em>Ridge-based vessel segmentation in color images of the retina</em>,
+  IEEE TMI, 2004, chargées depuis un miroir public et non redistribuées ici. Code sous licence MIT.
+</footer>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.js"></script>
+<script>
+const MIROIR = "https://huggingface.co/datasets/Zomba/DRIVE-digital-retinal-images-for-vessel-extraction/resolve/main";
+const ROUE = "vaisseaux-0.1.0-py3-none-any.whl";
+const EXEMPLES = ["01", "02", "19"];
+const CONFIGS = {
+  vert_brut: "Canal vert brut", clahe: "CLAHE", clahe_gaussien: "CLAHE + gaussien",
+  clahe_median: "CLAHE + médian", clahe_bilateral: "CLAHE + bilatéral", clahe_nl_means: "CLAHE + NL-means",
+};
+const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Rehaussée", vaisseaux: "Vaisseaux (Frangi)", verite: "Vérité terrain" };
+
+const $ = (id) => document.getElementById(id);
+const toile = $("toile"), ctx = toile.getContext("2d");
+const etat = { pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, resultat: null, source: null };
+let py = null;
+
+const pause = () => new Promise((r) => setTimeout(r, 30));
+const couleur = (nom) => getComputedStyle(document.documentElement).getPropertyValue(nom).trim();
+function bandeau(texte, erreur = false) {
+  const b = $("bandeau");
+  b.hidden = !texte;
+  b.textContent = texte || "";
+  b.classList.toggle("erreur", erreur);
+}
+function aide(texte) { $("aide").textContent = texte; }
+
+function appeler(nom, ...args) {
+  const resultat = py.globals.get(nom)(...args);
+  if (resultat && typeof resultat.toJs === "function") {
+    const js = resultat.toJs();
+    resultat.destroy();
+    return js;
+  }
+  return resultat;
+}
+
+async function occuper(texte, travail) {
+  if (etat.occupe) return;
+  etat.occupe = true;
+  document.body.style.cursor = "progress";
+  bandeau(texte);
+  await pause();
+  try {
+    await travail();
+    bandeau("");
+  } catch (e) {
+    console.error(e);
+    bandeau("Erreur : " + (e.message || e).toString().split("\n").slice(-2).join(" "), true);
+  } finally {
+    etat.occupe = false;
+    document.body.style.cursor = "";
+  }
+}
+
+async function demarrer() {
+  try {
+    py = await loadPyodide();
+    bandeau("Chargement de numpy, scipy, scikit-image et Pillow…");
+    await py.loadPackage(["numpy", "scipy", "scikit-image", "pillow", "micropip"]);
+    bandeau("Installation du paquet vaisseaux…");
+    const roue = new URL(ROUE, location.href).href;
+    await py.runPythonAsync(`import micropip\nawait micropip.install("${roue}", deps=False)`);
+    py.runPython(await (await fetch("pont.py")).text());
+    etat.pret = true;
+    $("lancerGalerie").disabled = false;
+    await chargerExemple("02");
+  } catch (e) {
+    console.error(e);
+    bandeau("Impossible de charger Python dans ce navigateur : " + e.message, true);
+  }
+}
+
+async function telecharger(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`téléchargement impossible (${r.status})`);
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+async function chargerExemple(id) {
+  await occuper(`Chargement de l'image DRIVE ${id} et de son annotation…`, async () => {
+    const image = await telecharger(`${MIROIR}/val/input/${id}.tif`);
+    const verite = await telecharger(`${MIROIR}/val/label/${id}_manual1.png`);
+    installerImage(JSON.parse(appeler("charger_image", image, verite)), `DRIVE ${id}`);
+    await afficherVue(etat.vue === "verite" ? "verite" : etat.vue);
+  });
+}
+
+async function chargerFichier(fichier) {
+  await occuper(`Lecture de « ${fichier.name} »…`, async () => {
+    const octets = new Uint8Array(await fichier.arrayBuffer());
+    installerImage(JSON.parse(appeler("charger_image", octets)), fichier.name);
+    await afficherVue(etat.vue === "verite" ? "originale" : etat.vue);
+  });
+}
+
+function installerImage(infos, source) {
+  toile.width = infos.largeur;
+  toile.height = infos.hauteur;
+  etat.verite = infos.verite;
+  etat.source = source;
+  etat.points = [];
+  etat.resultat = null;
+  $("galerie").replaceChildren();
+  document.querySelectorAll("#exemples button").forEach((b) => b.classList.toggle("actif", b.textContent === source));
+  majVues();
+  majResultats();
+  aide(`${source} : cliquez le point de départ sur un vaisseau.`);
+}
+
+async function afficherVue(vue) {
+  etat.vue = vue;
+  majVues();
+  const png = appeler("vue", vue, $("configA").value);
+  etat.fond = await createImageBitmap(new Blob([png], { type: "image/png" }));
+  dessiner();
+}
+
+async function changerVue(vue) {
+  const lente = ["vert", "rehaussee", "vaisseaux"].includes(vue);
+  await occuper(lente ? `Prétraitement « ${CONFIGS[$("configA").value]} »…` : "Affichage…", () => afficherVue(vue));
+}
+
+function majVues() {
+  const conteneur = $("vues");
+  if (!conteneur.childElementCount) {
+    for (const [cle, nom] of Object.entries(VUES)) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.vue = cle;
+      b.textContent = nom;
+      b.addEventListener("click", () => etat.pret && changerVue(cle));
+      conteneur.append(b);
+    }
+  }
+  for (const b of conteneur.children) {
+    b.classList.toggle("actif", b.dataset.vue === etat.vue);
+    b.setAttribute("aria-pressed", b.dataset.vue === etat.vue);
+    if (b.dataset.vue === "verite") {
+      b.disabled = !etat.verite;
+      b.title = etat.verite ? "" : "Disponible pour les images DRIVE";
+    }
+  }
+}
+
+function polyligne(points, teinte, largeur) {
+  if (!points || points.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(points[0][0] + 0.5, points[0][1] + 0.5);
+  for (const [x, y] of points.slice(1)) ctx.lineTo(x + 0.5, y + 0.5);
+  ctx.strokeStyle = teinte;
+  ctx.lineWidth = largeur;
+  ctx.lineJoin = ctx.lineCap = "round";
+  ctx.stroke();
+}
+
+function dessiner() {
+  if (!etat.fond) return;
+  ctx.drawImage(etat.fond, 0, 0);
+  const e = Math.max(2, toile.width / 220);
+  const r = etat.resultat;
+  if (r?.reference) polyligne(r.reference, "rgba(255,255,255,0.7)", 3 * e);
+  const teintes = [couleur("--trace-a"), couleur("--trace-b")];
+  r?.traces.forEach((t, i) => polyligne(t.chemin, teintes[i], e));
+  for (const [x, y] of etat.points) {
+    ctx.beginPath();
+    ctx.arc(x + 0.5, y + 0.5, 2.6 * e, 0, 2 * Math.PI);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#202024";
+    ctx.stroke();
+  }
+}
+
+function configsDemandees() {
+  const a = $("configA").value, b = $("configB").value;
+  return $("comparer").checked && b !== a ? [a, b] : [a];
+}
+
+async function tracer() {
+  if (etat.points.length < 2) return;
+  const [[x0, y0], [x1, y1]] = etat.points;
+  const configs = configsDemandees();
+  const nouvelles = configs.map((c) => CONFIGS[c]).join(" et ");
+  await occuper(`Prétraitement et recherche du plus court chemin (${nouvelles})…`, async () => {
+    etat.resultat = JSON.parse(appeler("tracer", x0, y0, x1, y1, JSON.stringify(configs), $("algo").value, Number($("alpha").value)));
+    dessiner();
+    majResultats();
+    aide("Cliquez à nouveau pour choisir un nouveau point de départ.");
+  });
+}
+
+function majResultats() {
+  const table = $("resultats"), note = $("noteResultats"), legende = $("legende");
+  table.replaceChildren();
+  legende.replaceChildren();
+  note.textContent = "";
+  const r = etat.resultat;
+  if (!r) return;
+  const teintes = [couleur("--trace-a"), couleur("--trace-b")];
+  const avecScores = r.traces.some((t) => "f1" in t);
+  const entetes = ["Prétraitement", "Longueur (px)", "Pixels explorés", "Prétraitement (ms)", "Recherche (ms)"];
+  if (avecScores) entetes.push("Précision", "Couverture", "F1", "Fréchet (px)");
+  const thead = table.createTHead().insertRow();
+  for (const h of entetes) { const th = document.createElement("th"); th.textContent = h; thead.append(th); }
+  const corps = table.createTBody();
+  r.traces.forEach((t, i) => {
+    const ligne = corps.insertRow();
+    const nom = ligne.insertCell();
+    nom.innerHTML = `<span class="pastille" style="background:${teintes[i]}"></span>`;
+    nom.append(t.nom);
+    if (t.erreur) {
+      const c = ligne.insertCell();
+      c.colSpan = entetes.length - 1;
+      c.style.textAlign = "left";
+      c.textContent = t.erreur;
+      return;
+    }
+    const valeurs = [t.longueur.toFixed(0), t.pixels_visites.toLocaleString("fr-FR"), t.pretraitement_ms, t.recherche_ms];
+    if (avecScores) valeurs.push(t.precision.toFixed(3), t.couverture.toFixed(3), t.f1.toFixed(3), t.frechet.toFixed(1));
+    for (const v of valeurs) ligne.insertCell().textContent = v;
+  });
+  r.traces.forEach((t, i) => {
+    const s = document.createElement("span");
+    s.innerHTML = `<span class="pastille" style="background:${teintes[i]}"></span>`;
+    s.append(`Tracé ${"AB"[i]} : ${t.nom}`);
+    legende.append(s);
+  });
+  if (r.reference) {
+    const s = document.createElement("span");
+    s.innerHTML = `<span class="pastille" style="background:rgba(160,160,160,0.9)"></span>`;
+    s.append("Référence de l'expert (trait blanc épais)");
+    legende.append(s);
+    note.textContent = "Précision : part du tracé à moins de 2 px d'un vaisseau annoté. Couverture : part de la référence suivie par le tracé. " +
+      "Fréchet : écart maximal en parcourant les deux courbes dans le même sens.";
+  } else if (etat.verite) {
+    note.textContent = "Pas de score : un des points est à plus de 6 px d'un vaisseau annoté, ou les deux points ne sont pas reliés dans l'annotation.";
+  } else {
+    note.textContent = "Image sans annotation : le tracé n'est pas noté.";
+  }
+}
+
+async function galerie() {
+  if (!etat.pret || etat.occupe) return;
+  const conteneur = $("galerie");
+  conteneur.replaceChildren();
+  for (const [cle, nom] of Object.entries(CONFIGS)) {
+    await occuper(`Carte « ${nom} »…`, async () => {
+      const v = JSON.parse(appeler("vignette", cle));
+      const figure = document.createElement("figure");
+      const img = document.createElement("img");
+      img.src = v.image;
+      img.alt = `Carte des vaisseaux, ${nom}`;
+      const legende = document.createElement("figcaption");
+      legende.innerHTML = `<strong></strong><br><span class="scores"></span>`;
+      legende.querySelector("strong").textContent = nom;
+      legende.querySelector(".scores").textContent = "auc" in v
+        ? `AUC ${v.auc.toFixed(3)} · MCC ${v.mcc.toFixed(3)} · ${v.duree_ms} ms`
+        : `${v.duree_ms} ms`;
+      figure.append(img, legende);
+      conteneur.append(figure);
+    });
+  }
+}
+
+function initialiser() {
+  for (const id of EXEMPLES) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = `DRIVE ${id}`;
+    b.addEventListener("click", () => etat.pret && chargerExemple(id));
+    $("exemples").append(b);
+  }
+  for (const sel of [$("configA"), $("configB")]) {
+    for (const [cle, nom] of Object.entries(CONFIGS)) sel.add(new Option(nom, cle));
+  }
+  $("configA").value = "clahe_nl_means";
+  $("configB").value = "clahe_bilateral";
+  majVues();
+  aide("Chargement en cours…");
+
+  $("fichier").addEventListener("change", (e) => e.target.files[0] && etat.pret && chargerFichier(e.target.files[0]));
+  $("effacer").addEventListener("click", () => {
+    etat.points = [];
+    etat.resultat = null;
+    dessiner();
+    majResultats();
+    aide("Cliquez le point de départ sur un vaisseau.");
+  });
+  $("alpha").addEventListener("input", (e) => ($("alphaValeur").textContent = e.target.value));
+  $("comparer").addEventListener("change", () => { $("configB").disabled = !$("comparer").checked; tracer(); });
+  for (const id of ["configB", "algo", "alpha"]) $(id).addEventListener("change", tracer);
+  $("configA").addEventListener("change", async () => {
+    if (["vert", "rehaussee", "vaisseaux"].includes(etat.vue)) await changerVue(etat.vue);
+    await tracer();
+  });
+  $("lancerGalerie").addEventListener("click", galerie);
+
+  toile.addEventListener("click", async (e) => {
+    if (!etat.pret || etat.occupe || !etat.fond) return;
+    const r = toile.getBoundingClientRect();
+    const x = Math.min(toile.width - 1, Math.max(0, Math.round(((e.clientX - r.left) * toile.width) / r.width)));
+    const y = Math.min(toile.height - 1, Math.max(0, Math.round(((e.clientY - r.top) * toile.height) / r.height)));
+    if (etat.points.length >= 2) {
+      etat.points = [];
+      etat.resultat = null;
+      majResultats();
+    }
+    etat.points.push([x, y]);
+    dessiner();
+    if (etat.points.length === 1) aide("Cliquez maintenant le point d'arrivée, plus loin sur le vaisseau.");
+    else await tracer();
+  });
+  demarrer();
+}
+
+initialiser();
+</script>
+</body>
+</html>

@@ -11,6 +11,7 @@ from vaisseaux.evaluation import (
     intervalle_bootstrap,
     metriques_binaires,
     plus_long_ecart,
+    reference_entre,
 )
 
 
@@ -90,3 +91,16 @@ def test_statistiques():
     a = np.linspace(0.8, 0.9, 12)
     assert comparer_apparie(a, a + 0.05)["p_valeur"] < 0.01
     assert comparer_apparie(a, a)["p_valeur"] == 1.0
+
+
+def test_reference_entre_deux_points_cliques():
+    verite = np.zeros((60, 80), bool)
+    verite[30, 5:75] = True
+    verite[5:30, 40] = True
+    reference = reference_entre(verite, (32, 10), (8, 41))
+    assert reference is not None
+    assert tuple(reference[0]) == (30, 10) and tuple(reference[-1]) == (8, 40)
+    assert np.all(verite[tuple(reference.T)])
+    assert reference_entre(verite, (50, 10), (8, 41)) is None  # départ trop loin d'un vaisseau
+    verite[30, 38:43] = False  # coupure : plus de chemin
+    assert reference_entre(verite, (30, 10), (30, 70)) is None

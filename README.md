@@ -1,6 +1,9 @@
 # Tracé des vaisseaux sanguins rétiniens par plus court chemin
 
 [![ci](https://github.com/sheene123/retina-vessel-tracing/actions/workflows/ci.yml/badge.svg)](https://github.com/sheene123/retina-vessel-tracing/actions/workflows/ci.yml)
+[![Démo sur Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20D%C3%A9mo-Hugging%20Face-yellow)](https://huggingface.co/spaces/sheenee261/retina-vessel-tracing)
+
+**Démo en ligne : https://huggingface.co/spaces/sheenee261/retina-vessel-tracing** (tout s'exécute dans le navigateur).
 
 Extraction du tracé d'un vaisseau sanguin sur une image de fond d'œil, à partir du jeu de
 données public [DRIVE](https://drive.grand-challenge.org/). L'image est modélisée comme
@@ -48,12 +51,16 @@ flowchart LR
 
 ## Démo interactive
 
-```bash
-pip install gradio && python demo/app.py
-```
+[Essayer en ligne](https://huggingface.co/spaces/sheenee261/retina-vessel-tracing) : cliquer deux points sur un
+vaisseau, comparer deux prétraitements sur le même tracé, afficher les vues intermédiaires (canal vert, image
+rehaussée, carte de Frangi, vérité terrain), comparer les cartes des six chaînes et tester sa propre image.
+Sur les images DRIVE, le tracé est noté face à l'annotation experte.
 
-Cliquez deux points sur un vaisseau : le tracé s'affiche avec sa longueur, le nombre de pixels
-explorés et les durées. Le même fichier sert de Space Hugging Face ([demo/README.md](demo/README.md)).
+La démo web ([demo/web/](demo/web/)) exécute le paquet Python **dans le navigateur** avec
+[Pyodide](https://pyodide.org) : aucune image ne quitte l'ordinateur et l'hébergement est un simple Space
+statique. Déploiement : `python scripts/deployer_space.py --space <utilisateur>/retina-vessel-tracing`.
+Une variante Gradio ([demo/gradio/](demo/gradio/)) existe pour une exécution côté serveur
+(`pip install gradio && python demo/gradio/app.py`).
 
 ## API
 
@@ -134,7 +141,8 @@ src/vaisseaux/
   evaluation.py      métriques de tracé et de segmentation, bootstrap, Wilcoxon
   benchmark.py       protocole d'évaluation entraînement / test
   api.py             API FastAPI
-scripts/             téléchargement de DRIVE, figure
+scripts/             téléchargement de DRIVE, figure, déploiement du Space
+demo/web/            démo dans le navigateur (Pyodide) ; demo/gradio/ : variante serveur
 docs/evaluation.md   méthodologie d'évaluation
 resultats/           résultats versionnés du dernier benchmark
 ```
@@ -150,7 +158,7 @@ resultats/           résultats versionnés du dernier benchmark
       du vaisseau, étiquettes artère/veine pour vérifier l'identité du vaisseau aux
       croisements
 - [ ] Généralisation à d'autres bases (STARE, CHASE_DB1, HRF)
-- [x] Interface web : cliquer deux points et voir le tracé ([demo/](demo/), Space Hugging Face)
+- [x] Interface web : tracé, comparaison, évaluation, images personnelles ([démo en ligne](https://huggingface.co/spaces/sheenee261/retina-vessel-tracing))
 
 ## Données
 
