@@ -46,6 +46,15 @@ flowchart LR
    et cohérente, donc exacte. Les tests vérifient les coûts contre
    `scipy.sparse.csgraph.dijkstra`.
 
+## Démo interactive
+
+```bash
+pip install gradio && python demo/app.py
+```
+
+Cliquez deux points sur un vaisseau : le tracé s'affiche avec sa longueur, le nombre de pixels
+explorés et les durées. Le même fichier sert de Space Hugging Face ([demo/README.md](demo/README.md)).
+
 ## API
 
 ```bash
@@ -141,7 +150,7 @@ resultats/           résultats versionnés du dernier benchmark
       du vaisseau, étiquettes artère/veine pour vérifier l'identité du vaisseau aux
       croisements
 - [ ] Généralisation à d'autres bases (STARE, CHASE_DB1, HRF)
-- [ ] Interface web : cliquer deux points et voir le tracé
+- [x] Interface web : cliquer deux points et voir le tracé ([demo/](demo/), Space Hugging Face)
 
 ## Données
 
