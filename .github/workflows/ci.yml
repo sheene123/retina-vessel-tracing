@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Installation
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Tests
+        run: pytest
+
+  docker:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construction de l'image
+        run: docker build -t vaisseaux:${{ github.sha }} .
+      - name: Test de fumée du conteneur
+        run: |
+          docker run -d --name api -p 8000:8000 vaisseaux:${{ github.sha }}
+          for i in $(seq 1 30); do curl -fs localhost:8000/sante && break; sleep 1; done
+          # image synthétique : un vaisseau sombre horizontal sur fond clair
+          docker exec api python -c "
+          import numpy as np; from PIL import Image
+          img = np.full((64, 64, 3), (200, 140, 60), np.uint8); img[30:33, :, 1] = 60
+          Image.fromarray(img).save('/tmp/retine.png')"
+          docker cp api:/tmp/retine.png retine.png
+          curl -fs -F image=@retine.png -F depart_x=8 -F depart_y=31 -F arrivee_x=55 -F arrivee_y=31 \
+            localhost:8000/tracer | python3 -c "import json,sys; r=json.load(sys.stdin); print(r['longueur_px'], r['durees_ms']); assert r['chemin'][-1] == [55, 31]"
+      - name: Journaux en cas d'échec
+        if: failure()
+        run: docker logs api
