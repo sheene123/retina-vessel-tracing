@@ -112,6 +112,47 @@ def vignette(config: str) -> str:
     )
 
 
+def _message(erreur: ValueError) -> str:
+    """Traduit les erreurs du graphe en consignes compréhensibles."""
+    texte = str(erreur)
+    if "hors du champ" in texte:
+        return "un des points est en dehors de la rétine visible : cliquez à l'intérieur du disque."
+    if "aucun chemin" in texte:
+        return "aucun chemin ne relie ces deux points dans la rétine visible."
+    return texte
+
+
+def preparer(config: str) -> int:
+    """Calcule (ou reprend du cache) les cartes d'une configuration ; renvoie la durée en ms."""
+    deja = config in _etat["cartes"]
+    _cartes(config)
+    return 0 if deja else round(_etat["durees"][config])
+
+
+def accrocher(x: int, y: int, config: str, aimanter: bool = True, rayon: int = 6) -> str:
+    """Point retenu pour un clic. Avec l'aimantation, on garde le pixel cliqué s'il est déjà sur un
+    vaisseau ; sinon on prend le pixel le plus « vaisseau » tout proche, avec une forte préférence
+    pour la distance afin de ne pas sauter sur un gros vaisseau voisin."""
+    masque = _etat["masque"]
+    hauteur, largeur = masque.shape
+    x, y = int(np.clip(x, 0, largeur - 1)), int(np.clip(y, 0, hauteur - 1))
+    if not aimanter:
+        return json.dumps({"dans_fov": bool(masque[y, x]), "x": x, "y": y})
+    vaisseaux = _cartes(config).vaisseaux
+    l0, l1, c0, c1 = max(0, y - rayon), min(hauteur, y + rayon + 1), max(0, x - rayon), min(largeur, x + rayon + 1)
+    fenetre = vaisseaux[l0:l1, c0:c1]
+    lignes, colonnes = np.mgrid[l0:l1, c0:c1]
+    d2 = (lignes - y) ** 2 + (colonnes - x) ** 2
+    valides = masque[l0:l1, c0:c1] & (d2 <= rayon**2)
+    if not valides.any():
+        return json.dumps({"dans_fov": False, "x": x, "y": y})
+    if masque[y, x] and vaisseaux[y, x] >= 0.6 * fenetre[valides].max():
+        return json.dumps({"dans_fov": True, "x": x, "y": y})
+    score = np.where(valides, fenetre * np.exp(-d2 / (2 * 2.0**2)), -1.0)
+    i = np.unravel_index(int(np.argmax(score)), score.shape)
+    return json.dumps({"dans_fov": True, "x": int(colonnes[i]), "y": int(lignes[i])})
+
+
 def tracer(x0: int, y0: int, x1: int, y1: int, configs_json: str, algorithme: str, alpha: float) -> str:
     """Trace le chemin pour chaque configuration demandée ; si la vérité terrain est connue,
     ajoute le chemin de référence de l'expert et les scores du tracé."""
@@ -129,7 +170,7 @@ def tracer(x0: int, y0: int, x1: int, y1: int, configs_json: str, algorithme: st
         try:
             chemin = plus_court_chemin(cout, depart, arrivee, a_etoile=algorithme == "a_etoile")
         except ValueError as erreur:
-            reponse["traces"].append({"config": config, "nom": NOMS[config], "erreur": str(erreur)})
+            reponse["traces"].append({"config": config, "nom": NOMS[config], "erreur": _message(erreur)})
             continue
         trace = {
             "config": config,
