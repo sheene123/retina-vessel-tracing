@@ -106,6 +106,22 @@ unique : il faut le choisir selon le marqueur étudié.
 donne la même qualité de tracé que la meilleure chaîne Frangi (11,8 % d'erreur contre 12,0 %),
 ce qui confirme le résultat du benchmark de tracé à une autre échelle.
 
+**6. Les mesures ne permettent pas encore de comparer des patients.** Sur les 20 patients, on
+compare la valeur de chaque marqueur mesurée par le U-Net (Dice 0,82) à celle de l'expert. Le
+U-Net ne classe pas les patients comme l'expert : la corrélation de rang va de +0,10
+(fragmentation) à +0,47 (tortuosité), et aucun intervalle de confiance n'exclut une corrélation
+faible. La part aléatoire de l'erreur est aussi grande que les différences entre patients
+(dispersion de 0,96 à 1,27 écart-type selon le marqueur, 3,7 pour la fragmentation). À cela
+s'ajoutent des biais constants, par exemple des vaisseaux vus en moyenne plus larges que par
+l'expert (+3,3 écarts-types sur le calibre moyen). La meilleure méthode réelle atteint +0,63 sur
+la tortuosité (U-Net au seuil 0,7), le seul marqueur qui dépasse 0,5.
+
+Conséquence directe pour l'oculomique : avec une segmentation de ce niveau, une différence de
+marqueur entre deux patients peut venir de la segmentation plutôt que du patient. Avant de relier
+ces marqueurs à un risque cardiovasculaire, il faut mesurer et améliorer leur précision. Deux
+réserves : les 20 patients de DRIVE sont peu variés (ce qui rend la tâche difficile), et
+l'annotation de l'expert a elle-même une marge d'erreur, non mesurée ici.
+
 ## Recommandations
 
 1. Ne jamais évaluer une segmentation destinée à des mesures vasculaires sur le seul Dice (ou
@@ -115,7 +131,9 @@ ce qui confirme le résultat du benchmark de tracé à une autre échelle.
    un bon substitut : valider ces marqueurs directement contre les valeurs issues de
    l'annotation experte.
 3. **Choisir le seuil de binarisation selon le marqueur**, pas selon le Dice.
-4. Le comptage des bifurcations est très sensible au bruit des contours : élaguer les
+4. **Rapporter la concordance des marqueurs avec l'expert sur les patients** (corrélation, biais,
+   dispersion), pas seulement la qualité de la segmentation.
+5. Le comptage des bifurcations est très sensible au bruit des contours : élaguer les
    petites branches du squelette avant de compter.
 
 ## Limites

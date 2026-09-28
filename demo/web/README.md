@@ -7,7 +7,7 @@ sdk: static
 app_file: index.html
 pinned: false
 license: mit
-short_description: Cliquez deux points, Dijkstra suit le vaisseau
+short_description: Tracé et mesures des vaisseaux rétiniens
 ---
 
 # Tracé des vaisseaux rétiniens par plus court chemin
@@ -20,6 +20,9 @@ Démo interactive du projet [retina-vessel-tracing](https://github.com/sheene123
 - **Évaluer** : sur les images DRIVE, le tracé est noté face à l'annotation experte (précision, couverture,
   F1, distance de Fréchet).
 - **Tester vos images** : JPEG, PNG ou TIFF.
+- **Mesurer les vaisseaux** : un U-Net segmente la rétine dans le navigateur, puis 8 marqueurs vasculaires sont
+  mesurés (densité, calibre, tortuosité, complexité…), avec leur fiabilité issue d'une étude sur 20 patients.
+  Démonstration de recherche, pas un diagnostic.
 
 Le code Python du projet tourne **dans votre navigateur** grâce à [Pyodide](https://pyodide.org) :
 aucune image n'est envoyée à un serveur. Les exemples proviennent du jeu de test public DRIVE (Staal et al.,

@@ -168,6 +168,7 @@ def _image(tache: tuple) -> list[dict]:
                 "famille": famille,
                 "metriques": metriques(binaire, im.verite, im.masque),
                 "marqueurs": biomarqueurs,
+                "reference": reference,
                 "erreurs": erreurs,
             }
         )
@@ -224,6 +225,52 @@ def _pouvoir_selection(lignes: list[dict], metrique: str, cible: str, n: int = 1
     }
 
 
+def verdict(correlation: float) -> str:
+    """Une mesure sert à comparer des patients si elle les classe comme l'expert."""
+    if correlation >= 0.8:
+        return "fiable"
+    return "approximative" if correlation >= 0.5 else "peu fiable"
+
+
+def fiabilite(lignes: list[dict], n: int = 2000, graine: int = 0) -> dict:
+    """Pour chaque méthode et chaque marqueur, sur les patients :
+    - corrélation de rang entre la mesure et la valeur de l'expert (la méthode classe-t-elle les
+      patients comme l'expert ?), avec intervalle par bootstrap sur les patients ;
+    - biais (erreur constante) et dispersion de l'erreur, rapportés à l'écart-type entre patients.
+    Un biais n'empêche pas de comparer des patients entre eux ; une dispersion de l'ordre de
+    l'écart entre patients, si."""
+    rng = np.random.default_rng(graine)
+    sortie = {}
+    for methode in dict.fromkeys(lg["methode"] for lg in lignes):
+        sous = [lg for lg in lignes if lg["methode"] == methode]
+        sortie[methode] = {}
+        for k in MARQUEURS:
+            reference = np.array([lg["reference"][k] for lg in sous], dtype=float)
+            mesure = np.array([lg["marqueurs"][k] for lg in sous], dtype=float)
+            ok = np.isfinite(reference) & np.isfinite(mesure)
+            reference, mesure = reference[ok], mesure[ok]
+            ecart = float(reference.std(ddof=1))
+            difference = mesure - reference
+
+            def rho(index: np.ndarray, r=reference, m=mesure) -> float:
+                if np.ptp(r[index]) == 0 or np.ptp(m[index]) == 0:
+                    return float("nan")
+                return float(spearmanr(r[index], m[index]).statistic)
+
+            correlation = rho(np.arange(len(reference)))
+            tirages = np.array([rho(rng.choice(len(reference), len(reference))) for _ in range(n)])
+            sortie[methode][k] = {
+                "correlation_patients": correlation,
+                "ic_bas": float(np.nanquantile(tirages, 0.025)),
+                "ic_haut": float(np.nanquantile(tirages, 0.975)),
+                "biais_normalise": float(difference.mean() / ecart) if ecart > 0 else float("nan"),
+                "dispersion_normalisee": float(difference.std(ddof=1) / ecart) if ecart > 0 else float("nan"),
+                "ecart_type_patients": ecart,
+                "verdict": verdict(correlation),
+            }
+    return sortie
+
+
 def analyser(lignes: list[dict]) -> dict:
     sous_ensembles = {
         "toutes": lignes,
@@ -249,6 +296,8 @@ def analyser(lignes: list[dict]) -> dict:
             "metriques": {m: float(np.nanmean([lg["metriques"][m] for lg in sous])) for m in METRIQUES},
             "erreurs": {c: float(np.nanmean([lg["erreurs"][c] for lg in sous])) for c in CIBLES},
         }
+    if all("reference" in lg for lg in lignes):
+        resultat["fiabilite"] = fiabilite(lignes)
     return resultat
 
 
@@ -341,6 +390,30 @@ def rapport(resultat: dict, infos: dict) -> str:
             )
             + " |"
         )
+    if "fiabilite" in resultat:
+        f = resultat["fiabilite"]
+        reelles = [m for m, v in resultat["par_methode"].items() if v["famille"] != "Perturbation"]
+        lignes += [
+            "",
+            "## Les mesures permettent-elles de comparer des patients ?",
+            "",
+            "Pour chaque marqueur, corrélation de rang entre la mesure d'une méthode et celle de l'expert sur les "
+            "20 patients [IC 95 % bootstrap sur les patients] : la méthode classe-t-elle les patients comme l'expert ? "
+            "Biais : erreur constante, en écarts-types entre patients (il fausse les valeurs absolues, pas le "
+            "classement). Dispersion : part aléatoire de l'erreur, dans la même unité (au-dessus de 1, elle dépasse "
+            "les différences entre patients).",
+            "",
+            "| Marqueur | U-Net 0,5 : corrélation | biais | dispersion | Frangi NL-means : corrélation | Meilleure méthode réelle |",
+            "|---|---|---|---|---|---|",
+        ]
+        for k in MARQUEURS:
+            u, fr_ = f["unet_p50"][k], f["frangi_clahe_nl_means"][k]
+            meilleure = max(reelles, key=lambda m: np.nan_to_num(f[m][k]["correlation_patients"], nan=-2))
+            lignes.append(
+                f"| {NOMS_CIBLES[k]} | {u['correlation_patients']:+.2f} [{u['ic_bas']:+.2f} ; {u['ic_haut']:+.2f}] | "
+                f"{u['biais_normalise']:+.2f} | {u['dispersion_normalisee']:.2f} | {fr_['correlation_patients']:+.2f} | "
+                f"{meilleure} : {f[meilleure][k]['correlation_patients']:+.2f} |"
+            )
     lignes += ["", f"Durée : {infos['duree_s']} s."]
     return "\n".join(lignes) + "\n"
 
@@ -445,8 +518,15 @@ def lancer(racine: Path, sortie: Path, modele_unet: Path, n_paires: int, travail
         json.dumps({"infos": infos, **resultat, "lignes": lignes}, indent=1, ensure_ascii=False)
     )
     (sortie / "etude.md").write_text(rapport(resultat, infos))
+    _ecrire_fiabilite(resultat, sortie)
     figures(resultat, sortie)
     return {"infos": infos, **resultat}
+
+
+def _ecrire_fiabilite(resultat: dict, sortie: Path) -> None:
+    """Fiabilité des mesures du U-Net (seuil 0,5), lue par la démo web."""
+    if "fiabilite" in resultat:
+        (sortie / "fiabilite_unet.json").write_text(json.dumps(resultat["fiabilite"]["unet_p50"], indent=1))
 
 
 def reanalyser(sortie: Path) -> dict:
@@ -456,6 +536,7 @@ def reanalyser(sortie: Path) -> dict:
     complet = {"infos": donnees["infos"], **resultat, "lignes": donnees["lignes"]}
     (sortie / "etude.json").write_text(json.dumps(complet, indent=1, ensure_ascii=False))
     (sortie / "etude.md").write_text(rapport(resultat, donnees["infos"]))
+    _ecrire_fiabilite(resultat, sortie)
     figures(resultat, sortie)
     return {"infos": donnees["infos"], **resultat}
 

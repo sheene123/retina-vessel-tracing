@@ -1,0 +1,74 @@
+{
+ "densite": {
+  "correlation_patients": 0.3037593984962406,
+  "ic_bas": -0.18547204568481163,
+  "ic_haut": 0.6788136294661331,
+  "biais_normalise": 0.22604750491768072,
+  "dispersion_normalisee": 1.2728481030540306,
+  "ecart_type_patients": 0.012213711601623071,
+  "verdict": "peu fiable"
+ },
+ "densite_longueur": {
+  "correlation_patients": 0.33233082706766914,
+  "ic_bas": -0.07649236352289208,
+  "ic_haut": 0.627292128603104,
+  "biais_normalise": -1.7080521224035847,
+  "dispersion_normalisee": 1.0829675580304778,
+  "ecart_type_patients": 0.003699604844397307,
+  "verdict": "peu fiable"
+ },
+ "dimension_fractale": {
+  "correlation_patients": 0.362406015037594,
+  "ic_bas": -0.05320886006566003,
+  "ic_haut": 0.667687595712098,
+  "biais_normalise": -0.39685498523509843,
+  "dispersion_normalisee": 1.199970929883193,
+  "ecart_type_patients": 0.02480574373425903,
+  "verdict": "peu fiable"
+ },
+ "calibre_moyen": {
+  "correlation_patients": 0.42105263157894735,
+  "ic_bas": -0.09083954720658481,
+  "ic_haut": 0.7818181818181819,
+  "biais_normalise": 3.2827073795756316,
+  "dispersion_normalisee": 1.0736525765463234,
+  "ecart_type_patients": 0.16329735065002787,
+  "verdict": "peu fiable"
+ },
+ "calibre_principal": {
+  "correlation_patients": 0.11127819548872178,
+  "ic_bas": -0.346723870715339,
+  "ic_haut": 0.5582940692195706,
+  "biais_normalise": 1.0968967717338747,
+  "dispersion_normalisee": 1.098949701371048,
+  "ecart_type_patients": 0.6143779497436146,
+  "verdict": "peu fiable"
+ },
+ "tortuosite": {
+  "correlation_patients": 0.46917293233082696,
+  "ic_bas": 0.04250091809230813,
+  "ic_haut": 0.8093851430994372,
+  "biais_normalise": -0.8039097012050154,
+  "dispersion_normalisee": 0.9575473243580632,
+  "ecart_type_patients": 0.024196314642925383,
+  "verdict": "peu fiable"
+ },
+ "bifurcations": {
+  "correlation_patients": 0.13533834586466165,
+  "ic_bas": -0.3222266351919499,
+  "ic_haut": 0.5564345193035577,
+  "biais_normalise": -1.5033972756487637,
+  "dispersion_normalisee": 1.0366587012578716,
+  "ecart_type_patients": 2.0762160760635213,
+  "verdict": "peu fiable"
+ },
+ "fragments": {
+  "correlation_patients": 0.09891225177540695,
+  "ic_bas": -0.36057623221282203,
+  "ic_haut": 0.48400347790103443,
+  "biais_normalise": 13.059032037521364,
+  "dispersion_normalisee": 3.683760776427254,
+  "ecart_type_patients": 1.500876936643164,
+  "verdict": "peu fiable"
+ }
+}

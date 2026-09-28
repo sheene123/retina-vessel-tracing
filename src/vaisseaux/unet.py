@@ -19,6 +19,7 @@ from torch.nn import functional as F
 
 from .donnees import charger, lister
 from .evaluation import metriques_binaires
+from .pretraitement import normaliser_pour_reseau
 
 
 def _bloc(entree: int, sortie: int) -> nn.Sequential:
@@ -55,10 +56,9 @@ class UNet(nn.Module):
 
 
 def entree(rgb: np.ndarray, masque: np.ndarray) -> np.ndarray:
-    """Image normalisée canal par canal dans le champ de vue, (3, H, W)."""
-    x = rgb.astype(np.float32) / 255.0
-    moyenne, ecart = x[masque].mean(axis=0), x[masque].std(axis=0) + 1e-6
-    return (((x - moyenne) / ecart) * masque[..., None]).transpose(2, 0, 1).astype(np.float32)
+    """Image normalisée canal par canal dans le champ de vue, (3, H, W), sans complément."""
+    h, w = masque.shape
+    return normaliser_pour_reseau(rgb, masque)[:, :h, :w]
 
 
 def _patchs(donnees, n: int, taille: int, rng: np.random.Generator):
@@ -143,12 +143,45 @@ def charger_modele(chemin: Path, appareil: str | None = None) -> UNet:
     return modele.to(appareil).eval()
 
 
+def exporter_onnx(poids: Path, sortie: Path, racine: Path | None = None) -> float:
+    """Exporte le U-Net en ONNX (hauteur et largeur libres, multiples de 8) pour le navigateur.
+    Renvoie l'écart maximal entre PyTorch et ONNX Runtime sur une image DRIVE (test de parité)."""
+    import onnxruntime as ort
+
+    modele = charger_modele(poids, "cpu")
+    h, w = torch.export.Dim("h8", min=4, max=512), torch.export.Dim("w8", min=4, max=512)
+    torch.onnx.export(
+        modele,
+        (torch.zeros(1, 3, 592, 576),),
+        str(sortie),
+        input_names=["image"],
+        output_names=["logits"],
+        dynamic_shapes=({2: 8 * h, 3: 8 * w},),
+        dynamo=True,
+        external_data=False,
+        verbose=False,
+    )
+    racine = racine or Path("data/DRIVE")
+    im = charger(racine, "test", lister(racine, "test")[0])
+    x = entree(im.rgb, im.masque)
+    x = np.pad(x, ((0, 0), (0, -x.shape[1] % 16), (0, -x.shape[2] % 16)))[None]
+    with torch.no_grad():
+        attendu = modele(torch.from_numpy(x)).numpy()
+    obtenu = ort.InferenceSession(str(sortie), providers=["CPUExecutionProvider"]).run(None, {"image": x})[0]
+    return float(np.abs(obtenu - attendu).max())
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Entraîne le U-Net de segmentation des vaisseaux sur DRIVE")
     parser.add_argument("--racine", type=Path, default=Path("data/DRIVE"))
     parser.add_argument("--sortie", type=Path, default=Path("modeles/unet_drive.pt"))
     parser.add_argument("--iterations", type=int, default=3000)
+    parser.add_argument("--onnx", type=Path, help="exporte les poids existants (--sortie) en ONNX à ce chemin")
     args = parser.parse_args(argv)
+    if args.onnx:
+        ecart = exporter_onnx(args.sortie, args.onnx, args.racine)
+        print(f"ONNX écrit dans {args.onnx}, écart maximal avec PyTorch : {ecart:.2e}")
+        return 0 if ecart < 1e-3 else 1
     modele, infos = entrainer(args.racine, args.iterations)
     args.sortie.parent.mkdir(parents=True, exist_ok=True)
     torch.save(modele.state_dict(), args.sortie)

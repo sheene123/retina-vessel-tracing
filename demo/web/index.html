@@ -111,6 +111,12 @@
   th:first-child, td:first-child { text-align: left; }
   th { color: var(--texte-2); font-weight: 500; }
   .bloc { margin-top: 20px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
+  .badge.fiable { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+  .badge.approximative { background: color-mix(in srgb, #b7791f 18%, transparent); color: #b7791f; }
+  .badge.peu { background: color-mix(in srgb, var(--alerte) 14%, transparent); color: var(--alerte); }
+  .mesures td small { display: block; color: var(--texte-2); font-size: 0.78rem; white-space: normal; max-width: 34ch; }
+  .avertissement { border-left: 3px solid var(--bord); padding-left: 10px; }
   .galerie { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; margin-top: 14px; }
   .galerie button { padding: 6px; text-align: left; background: var(--surface); animation: apparait 260ms var(--ease-out) backwards; }
   .galerie button.actif { outline: 2px solid var(--accent); background: var(--accent-doux); color: var(--texte); }
@@ -173,6 +179,19 @@
       <p class="aide">Vous pouvez aussi glisser-déposer votre propre image sur la zone ci-dessus.</p>
     </div>
 
+    <section class="carte" id="panneauMesures" aria-labelledby="titreMesures">
+      <h2 id="titreMesures">Mesures vasculaires</h2>
+      <p class="aide" style="margin-top:0">Un réseau de neurones (U-Net) segmente les vaisseaux, puis le programme mesure
+        leur densité, leur calibre, leur tortuosité et la complexité du réseau. Ces mesures sont étudiées comme marqueurs de
+        santé vasculaire, notamment du risque cardiovasculaire.</p>
+      <button type="button" id="mesurer" class="principal" disabled>Mesurer les vaisseaux</button>
+      <div id="resultatMesures" aria-live="polite"></div>
+      <p class="aide avertissement">Démonstration de recherche, pas un diagnostic. La colonne « Fiabilité » vient de notre
+        étude : elle indique si la mesure du U-Net classe les patients comme un expert. Sur les 20 patients de test, aucune
+        mesure ne le fait encore de façon fiable
+        (<a href="https://github.com/sheene123/retina-vessel-tracing/blob/main/docs/etude_metriques.md">voir l'étude</a>).</p>
+    </section>
+
     <details class="carte" id="details" hidden>
       <summary>Détails des mesures</summary>
       <div class="tableau"><table id="resultats"></table></div>
@@ -229,6 +248,7 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.min.js"></script>
 <script>
 const MIROIR = "https://huggingface.co/datasets/Zomba/DRIVE-digital-retinal-images-for-vessel-extraction/resolve/main";
 const ROUE = "vaisseaux-0.1.0-py3-none-any.whl";
@@ -241,12 +261,23 @@ const CONFIGS = {
   clahe_median: ["CLAHE + filtre médian", "Retire les points isolés en conservant les bords."],
   clahe_bilateral: ["CLAHE + filtre bilatéral", "Lisse en préservant les contours, mais crée parfois des raccourcis entre vaisseaux voisins."],
 };
-const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Contraste amélioré", vaisseaux: "Ce que voit le programme", verite: "Annotation de l'expert" };
+const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Contraste amélioré", vaisseaux: "Ce que voit le programme", segmentation: "Segmentation U-Net", verite: "Annotation de l'expert" };
+const MARQUEURS = [
+  ["densite", "Densité vasculaire", "part de la rétine couverte par les vaisseaux", (v) => `${fr(100 * v, 1)} %`],
+  ["densite_longueur", "Densité de longueur", "longueur totale des vaisseaux rapportée à la surface", (v) => `${fr(100 * v, 2)} %`],
+  ["dimension_fractale", "Complexité du réseau", "dimension fractale : plus elle est haute, plus le réseau est ramifié", (v) => fr(v, 3)],
+  ["calibre_moyen", "Calibre moyen", "largeur moyenne des vaisseaux, en pixels", (v) => `${fr(v, 2)} px`],
+  ["calibre_principal", "Calibre des gros vaisseaux", "largeur des 10 % de vaisseaux les plus larges", (v) => `${fr(v, 2)} px`],
+  ["tortuosite", "Tortuosité", "longueur d'un vaisseau divisée par la distance à vol d'oiseau (1 = droit)", (v) => fr(v, 3)],
+  ["bifurcations", "Bifurcations", "points de ramification pour 10 000 pixels de rétine", (v) => fr(v, 1)],
+  ["fragments", "Fragments", "morceaux séparés : un réseau réel est d'un seul tenant, les morceaux viennent de la segmentation", (v) => fr(v, 0)],
+];
 const CONSIGNES = ["", "Cliquez le point de départ sur un vaisseau", "Cliquez l'arrivée, plus loin sur le même vaisseau", "Cliquez ailleurs pour recommencer"];
 
 const $ = (id) => document.getElementById(id);
 const toile = $("toile"), ctx = toile.getContext("2d"), survol = $("survol"), sctx = survol.getContext("2d");
-const etat = { pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, resultat: null, source: null, apercu: null };
+const etat = { pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
+let sessionUnet = null;
 let py = null;
 
 const pause = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -286,8 +317,8 @@ function consigne(texte) {
 }
 
 function reglagesActifs(actifs) {
-  document.querySelectorAll("aside button, aside select, aside input, .outils button, #lancerGalerie, .galerie button")
-    .forEach((el) => (el.disabled = !actifs || (el.id === "telecharger" && !etat.resultat) || (el.dataset.vue === "verite" && !etat.verite)));
+  document.querySelectorAll("aside button, aside select, aside input, .outils button, #lancerGalerie, .galerie button, #mesurer")
+    .forEach((el) => (el.disabled = !actifs || (el.id === "telecharger" && !etat.resultat) || (el.dataset.vue === "verite" && !etat.verite) || (el.dataset.vue === "segmentation" && !etat.segmentation)));
 }
 
 async function occuper(texte, travail) {
@@ -321,6 +352,9 @@ async function demarrer() {
     voile("Installation du code du projet", "", 2);
     await py.runPythonAsync(`import micropip\nawait micropip.install("${new URL(ROUE, location.href).href}", deps=False)`);
     py.runPython(await (await fetch("pont.py")).text());
+    try {
+      appeler("definir_fiabilite", await (await fetch("fiabilite.json")).text());
+    } catch { /* sans fichier de fiabilité, la colonne reste vide */ }
     voile("Chargement d'une image d'exemple", "Image DRIVE et annotation de l'expert", 3);
     etat.pret = true;
     await chargerExemple("02");
@@ -362,7 +396,9 @@ async function chargerFichier(fichier) {
 
 async function installer(infos, source) {
   for (const t of [toile, survol]) { t.width = infos.largeur; t.height = infos.hauteur; }
-  Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null });
+  Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false });
+  if (etat.vue === "segmentation") etat.vue = "originale";
+  $("resultatMesures").replaceChildren();
   if (!etat.verite && etat.vue === "verite") etat.vue = "originale";
   $("galerie").replaceChildren();
   document.querySelectorAll("#exemples button").forEach((b) => b.classList.toggle("actif", b.dataset.id === source));
@@ -405,6 +441,10 @@ function majVues() {
     if (b.dataset.vue === "verite") {
       b.disabled = !etat.verite;
       b.title = etat.verite ? "" : "Disponible sur les images d'exemple annotées";
+    }
+    if (b.dataset.vue === "segmentation") {
+      b.disabled = !etat.segmentation;
+      b.title = etat.segmentation ? "" : "Cliquez d'abord « Mesurer les vaisseaux »";
     }
   }
 }
@@ -632,6 +672,52 @@ async function cliquer(e) {
   else await tracer();
 }
 
+async function mesurerVaisseaux() {
+  await occuper("Segmentation par le U-Net et mesure des vaisseaux", async () => {
+    if (!sessionUnet) {
+      ort.env.wasm.numThreads = 1;
+      ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+      sessionUnet = await ort.InferenceSession.create("unet_drive.onnx");
+    }
+    const octets = appeler("entree_unet");
+    const [h, w] = JSON.parse(appeler("forme_unet"));
+    const entree = new Float32Array(octets.slice().buffer);
+    const sortie = await sessionUnet.run({ image: new ort.Tensor("float32", entree, [1, 3, h, w]) });
+    const logits = sortie.logits.data;
+    appeler("recevoir_unet", new Uint8Array(logits.buffer, logits.byteOffset, logits.byteLength));
+    const r = JSON.parse(appeler("mesures"));
+    etat.segmentation = true;
+    afficherMesures(r);
+    await afficherVue("segmentation");
+  });
+}
+
+function badge(f) {
+  if (!f) return "";
+  const classe = { fiable: "fiable", approximative: "approximative", "peu fiable": "peu" }[f.verdict];
+  const titre = `Corrélation avec l'expert sur 20 patients : ${fr(f.correlation_patients, 2)} (IC 95 % ${fr(f.ic_bas, 2)} à ${fr(f.ic_haut, 2)})`;
+  return `<span class="badge ${classe}" title="${echapper(titre)}">${echapper(f.verdict)} (${fr(f.correlation_patients, 2)})</span>`;
+}
+
+function afficherMesures(r) {
+  const zone = $("resultatMesures");
+  const expert = MARQUEURS.some(([k]) => r.marqueurs[k].expert != null);
+  const entetes = ["Mesure", "U-Net", ...(expert ? ["Expert", "Écart"] : []), "Fiabilité pour comparer des patients"];
+  let html = '<div class="tableau"><table class="mesures"><thead><tr>' + entetes.map((h) => `<th>${h}</th>`).join("") + "</tr></thead><tbody>";
+  for (const [cle, nom, description, format] of MARQUEURS) {
+    const m = r.marqueurs[cle];
+    const valeur = m.valeur == null ? "n/d" : format(m.valeur);
+    const colonnesExpert = expert
+      ? `<td>${m.expert == null ? "n/d" : format(m.expert)}</td><td>${m.ecart_relatif == null ? "n/d" : `${fr(100 * m.ecart_relatif, 0)} %`}</td>`
+      : "";
+    html += `<tr><td>${echapper(nom)}<small>${echapper(description)}</small></td><td>${valeur}</td>${colonnesExpert}<td>${badge(m.fiabilite)}</td></tr>`;
+  }
+  html += "</tbody></table></div>";
+  if (r.dice != null) html += `<p class="aide">Dice de la segmentation U-Net sur cette image : ${fr(r.dice, 3)}. La vue « Segmentation U-Net » montre ce que le réseau a détecté.</p>`;
+  else html += '<p class="aide">Le U-Net a été entraîné sur les images DRIVE : sur un autre appareil photo, la segmentation peut être moins bonne. Vérifiez-la avec la vue « Segmentation U-Net ».</p>';
+  zone.innerHTML = html;
+}
+
 function initialiser() {
   for (const [id, nom] of EXEMPLES) {
     const b = document.createElement("button");
@@ -658,6 +744,7 @@ function initialiser() {
   for (const id of ["configA", "configB"]) $(id).addEventListener("change", changerConfig);
   for (const id of ["algo", "alpha"]) $(id).addEventListener("change", tracer);
   $("lancerGalerie").addEventListener("click", galerie);
+  $("mesurer").addEventListener("click", mesurerVaisseaux);
   $("voirReference").addEventListener("change", dessiner);
   document.addEventListener("keydown", (e) => e.key === "Escape" && !etat.occupe && effacer());
 

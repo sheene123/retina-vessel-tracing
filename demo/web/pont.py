@@ -12,10 +12,11 @@ import numpy as np
 from PIL import Image
 
 from vaisseaux.benchmark import CONFIGURATIONS
+from vaisseaux.biomarqueurs import MARQUEURS, mesurer
 from vaisseaux.donnees import estimer_masque_fov
 from vaisseaux.evaluation import auc_roc, evaluer_trace, metriques_binaires, reference_entre
 from vaisseaux.graphe import carte_de_cout, plus_court_chemin
-from vaisseaux.pretraitement import pretraiter
+from vaisseaux.pretraitement import normaliser_pour_reseau, pretraiter
 
 COTE_MAX = 800  # le calcul dans le navigateur est plus lent : on réduit les grandes images
 NOMS = {
@@ -79,6 +80,8 @@ def vue(nom: str, config: str) -> bytes:
     """PNG de la vue demandée : originale, vert, rehaussee, vaisseaux ou verite."""
     if nom == "originale":
         return _png(_etat["rgb"])
+    if nom == "segmentation" and "segmentation" in _etat:
+        return _png(_etat["segmentation"].astype(float))
     if nom == "verite" and "verite" in _etat:
         return _png(_etat["verite"].astype(float))
     cartes = _cartes(config)
@@ -185,4 +188,59 @@ def tracer(x0: int, y0: int, x1: int, y1: int, configs_json: str, algorithme: st
             m = evaluer_trace(chemin.pixels, reference, _etat["verite"])
             trace.update({k: round(m[k], 3) for k in ("precision", "couverture", "f1", "frechet")})
         reponse["traces"].append(trace)
+    return json.dumps(reponse)
+
+
+# ---------------------------------------------------------------- mesures vasculaires
+# Le U-Net est exécuté par ONNX Runtime Web côté JavaScript : Python prépare l'entrée, reçoit la
+# carte de probabilité et calcule les marqueurs.
+
+SEUIL_UNET = 0.5
+FIABILITE: dict = {}  # rempli par la page depuis fiabilite.json (erreur du U-Net / écart entre patients)
+
+
+def definir_fiabilite(texte_json: str) -> None:
+    FIABILITE.clear()
+    FIABILITE.update(json.loads(texte_json))
+
+
+def entree_unet() -> bytes:
+    """Image normalisée et complétée à un multiple de 16, en float32 (3, H, W)."""
+    x = normaliser_pour_reseau(_etat["rgb"], _etat["masque"])
+    _etat["forme_unet"] = x.shape[1:]
+    return x.tobytes()
+
+
+def forme_unet() -> str:
+    return json.dumps(list(_etat["forme_unet"]))
+
+
+def recevoir_unet(octets) -> None:
+    """Logits du U-Net (H, W complétés) -> probabilité, puis segmentation dans le champ de vue."""
+    hauteur, largeur = _etat["masque"].shape
+    logits = np.frombuffer(bytes(octets), dtype=np.float32).reshape(_etat["forme_unet"])[:hauteur, :largeur]
+    proba = 1.0 / (1.0 + np.exp(-logits))
+    _etat["segmentation"] = (proba >= SEUIL_UNET) & _etat["masque"]
+
+
+def _nombre(valeur) -> float | None:
+    valeur = float(valeur)
+    return valeur if np.isfinite(valeur) else None
+
+
+def mesures() -> str:
+    """Marqueurs vasculaires de la segmentation U-Net ; avec une image annotée, valeurs de
+    l'expert et écart relatif."""
+    masque = _etat["masque"]
+    mesure = mesurer(_etat["segmentation"], masque)
+    expert = mesurer(_etat["verite"], masque) if "verite" in _etat else None
+    reponse: dict = {"marqueurs": {}, "fiabilite_disponible": bool(FIABILITE)}
+    for k in MARQUEURS:
+        ligne = {"valeur": _nombre(mesure[k]), "fiabilite": FIABILITE.get(k)}
+        if expert is not None:
+            ligne["expert"] = _nombre(expert[k])
+            ligne["ecart_relatif"] = _nombre(abs(mesure[k] - expert[k]) / abs(expert[k])) if expert[k] else None
+        reponse["marqueurs"][k] = ligne
+    if expert is not None:
+        reponse["dice"] = metriques_binaires(_etat["segmentation"], _etat["verite"], masque)["dice"]
     return json.dumps(reponse)

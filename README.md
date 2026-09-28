@@ -56,6 +56,13 @@ vaisseau, comparer deux prétraitements sur le même tracé, afficher les vues i
 rehaussée, carte de Frangi, vérité terrain), comparer les cartes des six chaînes et tester sa propre image.
 Sur les images DRIVE, le tracé est noté face à l'annotation experte.
 
+**Mesures vasculaires.** Un clic lance le U-Net dans le navigateur (ONNX Runtime Web, environ 2 s),
+puis mesure 8 marqueurs : densité, densité de longueur, dimension fractale, calibre moyen et des
+gros vaisseaux, tortuosité, bifurcations, fragments. Sur les images DRIVE, chaque mesure est
+comparée à celle de l'expert. Chaque mesure porte aussi un indicateur de fiabilité tiré de
+[l'étude](docs/etude_metriques.md) : la mesure classe-t-elle les patients comme l'expert ?
+C'est une démonstration de recherche, pas un diagnostic.
+
 La démo web ([demo/web/](demo/web/)) exécute le paquet Python **dans le navigateur** avec
 [Pyodide](https://pyodide.org) : aucune image ne quitte l'ordinateur et l'hébergement est un simple Space
 statique. Déploiement : `python scripts/deployer_space.py --space <utilisateur>/retina-vessel-tracing`.
@@ -132,6 +139,10 @@ de santé, sur des segmentations choisies pour leur Dice. L'étude
   calibre est faux de 35 %. Les deux métriques ont des angles morts complémentaires.
 - À Dice égal, le seuil du U-Net change l'erreur de calibre du simple au double : il faut le
   choisir selon le marqueur.
+- **Les mesures ne permettent pas encore de comparer des patients** : le U-Net classe les 20
+  patients comme l'expert avec une corrélation de 0,10 à 0,47 seulement, et la part aléatoire de
+  son erreur est aussi grande que les différences entre patients. Avant de relier ces marqueurs à
+  un risque cardiovasculaire, il faut améliorer leur précision.
 
 ![Pouvoir prédictif des métriques](resultats/etude_metriques/pouvoir_predictif_segmenteurs_reels.png)
 
@@ -145,6 +156,7 @@ python scripts/telecharger_drive.py          # ou --zip DRIVE.zip (archive offic
 pytest                                       # tests (images synthétiques, pas besoin de DRIVE)
 python -m vaisseaux.benchmark                # évaluation complète sur DRIVE
 pip install -e ".[ml]" && python -m vaisseaux.unet && python -m vaisseaux.etude   # étude des métriques
+python -m vaisseaux.unet --onnx modeles/unet_drive.onnx   # export du U-Net pour la démo web
 uvicorn vaisseaux.api:app --reload           # API en local
 ```
 
@@ -172,14 +184,17 @@ resultats/           résultats versionnés du dernier benchmark
 - [x] Graphe des pixels, Dijkstra et A\* validés contre SciPy
 - [x] API FastAPI, image Docker, CI GitHub Actions
 - [x] Protocole d'évaluation : métriques de tracé, bootstrap par image, tests appariés
-- [ ] Prétraitement : réglage adaptatif du débruitage, correction d'illumination
+- [x] Interface web : tracé, comparaison, évaluation, images personnelles ([démo en ligne](https://huggingface.co/spaces/sheenee261/retina-vessel-tracing))
 - [x] U-Net de segmentation et étude « métriques contre marqueurs vasculaires »
-- [ ] Coût du tracé tiré du U-Net, et U-Net dans la démo web (ONNX)
+- [x] Mesures vasculaires dans la démo (U-Net en ONNX), avec leur fiabilité mesurée
+- [ ] Améliorer la précision des marqueurs (plus de données, marqueurs artère/veine) avant tout
+      usage lié au risque cardiovasculaire
+- [ ] Prétraitement : réglage adaptatif du débruitage, correction d'illumination
+- [ ] Coût du tracé tiré du U-Net
 - [ ] Évaluation : second observateur (archive officielle), tolérance adaptée au calibre
       du vaisseau, étiquettes artère/veine pour vérifier l'identité du vaisseau aux
       croisements
-- [ ] Généralisation à d'autres bases (STARE, CHASE_DB1, HRF)
-- [x] Interface web : tracé, comparaison, évaluation, images personnelles ([démo en ligne](https://huggingface.co/spaces/sheenee261/retina-vessel-tracing))
+- [ ] Généralisation à d'autres bases (STARE, CHASE_DB1, HRF, FIVES)
 
 ## Données
 

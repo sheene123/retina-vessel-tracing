@@ -70,4 +70,19 @@ Question : le modèle qui a la meilleure métrique moyenne est-il aussi celui do
 | faux_positifs_15 | Perturbation | 0.930 | 0.957 | 15.0 % | 9.1 % | 3.0 % | 0.6 % | 1.5 % | 0.2 % | 10.7 % | 109.5 | 6.8 % |
 | contours_bruites | Perturbation | 0.837 | 0.837 | 2.1 % | 35.7 % | 2.3 % | 26.9 % | 18.9 % | 5.7 % | 610.4 % | 172.4 | 6.9 % |
 
-Durée : 99.2 s.
+## Les mesures permettent-elles de comparer des patients ?
+
+Pour chaque marqueur, corrélation de rang entre la mesure d'une méthode et celle de l'expert sur les 20 patients [IC 95 % bootstrap sur les patients] : la méthode classe-t-elle les patients comme l'expert ? Biais : erreur constante, en écarts-types entre patients (il fausse les valeurs absolues, pas le classement). Dispersion : part aléatoire de l'erreur, dans la même unité (au-dessus de 1, elle dépasse les différences entre patients).
+
+| Marqueur | U-Net 0,5 : corrélation | biais | dispersion | Frangi NL-means : corrélation | Meilleure méthode réelle |
+|---|---|---|---|---|---|
+| Densité | +0.30 [-0.19 ; +0.68] | +0.23 | 1.27 | +0.06 | unet_p30 : +0.31 |
+| Densité de longueur | +0.33 [-0.08 ; +0.63] | -1.71 | 1.08 | -0.14 | unet_p30 : +0.33 |
+| Dim. fractale | +0.36 [-0.05 ; +0.67] | -0.40 | 1.20 | -0.10 | unet_p70 : +0.38 |
+| Calibre moyen | +0.42 [-0.09 ; +0.78] | +3.28 | 1.07 | +0.13 | unet_p70 : +0.50 |
+| Calibre gros vaiss. | +0.11 [-0.35 ; +0.56] | +1.10 | 1.10 | +0.31 | frangi_vert_brut : +0.37 |
+| Tortuosité | +0.47 [+0.04 ; +0.81] | -0.80 | 0.96 | +0.47 | unet_p70 : +0.63 |
+| Bifurcations | +0.14 [-0.32 ; +0.56] | -1.50 | 1.04 | -0.01 | unet_p30 : +0.16 |
+| Fragmentation | +0.10 [-0.36 ; +0.48] | +13.06 | 3.68 | -0.05 | unet_p50 : +0.10 |
+
+Durée : 142.0 s.

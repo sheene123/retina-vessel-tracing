@@ -32,6 +32,14 @@ def main() -> int:
             shutil.copy(roue, site / roue.name)
         for fichier in ("index.html", "pont.py", "README.md"):
             shutil.copy(RACINE / "demo" / "web" / fichier, site / fichier)
+        # U-Net exporté (python -m vaisseaux.unet --onnx modeles/unet_drive.onnx) et fiabilité issue de l'étude
+        for source, cible in (
+            (RACINE / "modeles" / "unet_drive.onnx", "unet_drive.onnx"),
+            (RACINE / "resultats" / "etude_metriques" / "fiabilite_unet.json", "fiabilite.json"),
+        ):
+            if not source.exists():
+                raise SystemExit(f"{source} manquant : entraînez et exportez le U-Net, puis lancez l'étude")
+            shutil.copy(source, site / cible)
         api = HfApi()
         api.create_repo(args.space, repo_type="space", space_sdk="static", exist_ok=True)
         api.upload_folder(
