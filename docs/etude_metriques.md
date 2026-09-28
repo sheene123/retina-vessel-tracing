@@ -106,21 +106,40 @@ unique : il faut le choisir selon le marqueur étudié.
 donne la même qualité de tracé que la meilleure chaîne Frangi (11,8 % d'erreur contre 12,0 %),
 ce qui confirme le résultat du benchmark de tracé à une autre échelle.
 
-**6. Les mesures ne permettent pas encore de comparer des patients.** Sur les 20 patients, on
-compare la valeur de chaque marqueur mesurée par le U-Net (Dice 0,82) à celle de l'expert. Le
-U-Net ne classe pas les patients comme l'expert : la corrélation de rang va de +0,10
-(fragmentation) à +0,47 (tortuosité), et aucun intervalle de confiance n'exclut une corrélation
-faible. La part aléatoire de l'erreur est aussi grande que les différences entre patients
-(dispersion de 0,96 à 1,27 écart-type selon le marqueur, 3,7 pour la fragmentation). À cela
-s'ajoutent des biais constants, par exemple des vaisseaux vus en moyenne plus larges que par
-l'expert (+3,3 écarts-types sur le calibre moyen). La meilleure méthode réelle atteint +0,63 sur
-la tortuosité (U-Net au seuil 0,7), le seul marqueur qui dépasse 0,5.
+**6. Les mesures ne permettent pas encore de comparer des patients, même entre experts.** Sur
+les 20 patients, on compare la valeur de chaque marqueur mesurée par le U-Net (Dice 0,82) à celle
+du premier expert. Le U-Net classe mal les patients : corrélation de rang de +0,10
+(fragmentation) à +0,47 (tortuosité). Mais l'archive officielle de DRIVE contient les
+annotations d'un **second expert**, et il ne fait guère mieux : de +0,03 (bifurcations) à +0,63
+(fragmentation), avec une part aléatoire de l'erreur, elle aussi, de l'ordre des différences
+entre patients. Le U-Net ressemble même davantage au premier expert que le second (Dice 0,823
+contre 0,789). **Le problème n'est donc pas le modèle : à cette résolution, les définitions
+classiques des marqueurs dépendent de détails (capillaires, contours au pixel près) sur lesquels
+les experts divergent.**
 
-Conséquence directe pour l'oculomique : avec une segmentation de ce niveau, une différence de
-marqueur entre deux patients peut venir de la segmentation plutôt que du patient. Avant de relier
-ces marqueurs à un risque cardiovasculaire, il faut mesurer et améliorer leur précision. Deux
-réserves : les 20 patients de DRIVE sont peu variés (ce qui rend la tâche difficile), et
-l'annotation de l'expert a elle-même une marge d'erreur, non mesurée ici.
+**7. Des définitions robustes rendent la tortuosité mesurable.** Plutôt que d'améliorer le
+modèle, on rend les marqueurs robustes. Règle fixée à l'avance pour ne pas choisir en fonction
+du U-Net : on garde une variante si **les deux experts s'accordent mieux** sur elle, puis on
+mesure seulement ensuite le U-Net.
+
+| Marqueur | Accord entre les 2 experts | Accord U-Net / expert | Dispersion de l'erreur du U-Net |
+|---|---|---|---|
+| Tortuosité (définition classique) | +0,56 | +0,47 | 0,96 |
+| **Tortuosité pondérée** (segments d'au moins 40 px, pondérés par leur longueur) | **+0,75** [+0,49 ; +0,89] | **+0,73** [+0,34 ; +0,95] | **0,67** |
+| Densité de longueur | +0,28 | +0,33 | 1,08 |
+| Densité de longueur du réseau principal (sans vaisseaux de moins de 3 px) | +0,42 | +0,42 | 1,27 |
+| Dimension fractale | +0,40 | +0,36 | 1,20 |
+| Dimension fractale du réseau principal | +0,56 | +0,31 | 1,19 |
+
+La tortuosité pondérée est le seul marqueur dont l'erreur aléatoire passe nettement sous les
+différences entre patients, et **le U-Net y atteint le niveau d'accord entre deux experts**. Pour
+la densité de longueur du réseau principal aussi, le U-Net égale les experts, mais leur accord
+reste faible. Pour la dimension fractale du réseau principal, les experts s'accordent mieux que
+le U-Net : il y a là une marge de progrès pour le modèle. Une variante du calibre limitée aux
+vaisseaux larges a été testée et rejetée (accord des experts en baisse, de +0,56 à +0,16).
+
+Ces variantes ont été choisies et évaluées sur les mêmes 20 images : leur gain est à confirmer sur
+une autre base annotée par deux experts (STARE ou CHASE_DB1).
 
 ## Recommandations
 
@@ -138,9 +157,8 @@ l'annotation de l'expert a elle-même une marge d'erreur, non mesurée ici.
 
 ## Limites
 
-- Une seule base (DRIVE, 20 images de test, 565 × 584 pixels) et un seul annotateur : les
-  marqueurs de référence héritent de ses choix. La variabilité entre experts n'est pas mesurée
-  (le second observateur n'est pas dans le miroir utilisé).
+- Une seule base (DRIVE, 20 images de test, 565 × 584 pixels). Les marqueurs de référence sont
+  ceux du premier expert ; l'accord avec un second expert est mesuré (partie 6).
 - 9 segmenteurs réels seulement, d'où des intervalles larges en sélection de modèle.
 - Marqueurs implémentés dans ce projet, en pixels, et non validés contre un logiciel clinique
   (SIVA, VAMPIRE). Les marqueurs artère/veine (CRAE, CRVE, rapport artères/veines) ne sont pas
@@ -152,15 +170,15 @@ l'annotation de l'expert a elle-même une marge d'erreur, non mesurée ici.
 
 - Étendre à FIVES, CHASE_DB1 et HRF, et à des modèles pré-entraînés publics (AutoMorph, RETFound).
 - Ajouter les marqueurs artère/veine avec des étiquettes AV (RITE, AV-DRIVE).
-- Comparer l'erreur des marqueurs à la variabilité entre deux experts, pour savoir quelle
-  précision est atteignable.
+- Confirmer les marqueurs robustes sur STARE et CHASE_DB1, annotées par deux experts.
+- Mesurer les marqueurs à plus haute résolution (HRF, FIVES), où les capillaires sont mieux définis.
 - Proposer une métrique orientée marqueurs, combinant calibre et topologie.
 
 ## Reproduire
 
 ```bash
 pip install -e ".[dev,ml]"
-python scripts/telecharger_drive.py
+python scripts/telecharger_drive.py --second-observateur
 python -m vaisseaux.unet        # environ 2 minutes sur GPU
 python -m vaisseaux.etude       # environ 1 à 2 minutes sur 10 cœurs
 ```

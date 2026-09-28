@@ -26,6 +26,10 @@ MARQUEURS = (
     "tortuosite",
     "bifurcations",
     "fragments",
+    # variantes robustes, choisies parce que deux experts s'accordent mieux sur elles (docs/etude_metriques.md)
+    "tortuosite_ponderee",
+    "densite_longueur_principale",
+    "dimension_fractale_principale",
 )
 
 
@@ -101,6 +105,34 @@ def tortuosite(squelette: np.ndarray, longueur_min: int = 20) -> float:
     return float(np.mean(valeurs)) if valeurs else float("nan")
 
 
+def tortuosite_ponderee(squelette: np.ndarray, longueur_min: int = 40) -> float:
+    """Tortuosité des longs segments (au moins `longueur_min` pixels), pondérée par leur longueur :
+    somme des arcs / somme des cordes. Les segments courts, où l'annotation varie le plus, sont
+    ignorés et ne pèsent plus autant que les grands vaisseaux."""
+    etiquettes, _ = segments(squelette)
+    arcs, cordes = 0.0, 0.0
+    for k, fenetre in enumerate(ndi.find_objects(etiquettes), start=1):
+        if fenetre is None:
+            continue
+        masque = np.pad(etiquettes[fenetre] == k, 1)
+        if masque.sum() < longueur_min:
+            continue
+        mesure = _longueur_segment(masque)
+        if mesure is not None and mesure[1] > 0:
+            arcs, cordes = arcs + mesure[0], cordes + mesure[1]
+    return arcs / cordes if cordes > 0 else float("nan")
+
+
+def reseau_principal(binaire: np.ndarray, taille_min: int = 50) -> np.ndarray:
+    """Vaisseaux d'au moins 3 pixels de large, en morceaux d'au moins `taille_min` pixels :
+    on retire les capillaires, sur lesquels les annotateurs divergent le plus."""
+    principal = ndi.binary_opening(binaire, structure=np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool))
+    etiquettes, _ = ndi.label(principal, structure=_HUIT)
+    garder = np.bincount(etiquettes.ravel()) >= taille_min
+    garder[0] = False
+    return garder[etiquettes]
+
+
 def calibres(binaire: np.ndarray, squelette: np.ndarray) -> np.ndarray:
     """Largeur locale (en pixels) en chaque point du squelette : 2 d - 1, d étant la distance au fond."""
     return 2 * ndi.distance_transform_edt(binaire)[squelette] - 1
@@ -115,6 +147,8 @@ def mesurer(binaire: np.ndarray, masque: np.ndarray) -> dict[str, float]:
     etiquettes, _ = ndi.label(binaire, structure=_HUIT)
     tailles = np.bincount(etiquettes.ravel())[1:]
     _, n_jonctions = ndi.label(jonctions(squelette), structure=_HUIT)
+    principal = reseau_principal(binaire)
+    squelette_principal = skeletonize(principal)
     return {
         "densite": float(binaire.sum() / surface),
         "densite_longueur": float(squelette.sum() / surface),
@@ -126,4 +160,7 @@ def mesurer(binaire: np.ndarray, masque: np.ndarray) -> dict[str, float]:
         "tortuosite": tortuosite(squelette),
         "bifurcations": float(1e4 * n_jonctions / surface),
         "fragments": float((tailles >= 10).sum()),
+        "tortuosite_ponderee": tortuosite_ponderee(squelette),
+        "densite_longueur_principale": float(squelette_principal.sum() / surface),
+        "dimension_fractale_principale": dimension_fractale(principal),
     }

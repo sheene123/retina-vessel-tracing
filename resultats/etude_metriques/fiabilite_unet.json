@@ -1,74 +1,156 @@
 {
  "densite": {
   "correlation_patients": 0.3037593984962406,
-  "ic_bas": -0.18547204568481163,
-  "ic_haut": 0.6788136294661331,
+  "ic_bas": -0.20397208385222085,
+  "ic_haut": 0.6817181864658046,
   "biais_normalise": 0.22604750491768072,
   "dispersion_normalisee": 1.2728481030540306,
   "ecart_type_patients": 0.012213711601623071,
-  "verdict": "peu fiable"
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.3789473684210526,
+   "ic_bas": -0.1513544995076898,
+   "ic_haut": 0.789714601915213
+  }
  },
  "densite_longueur": {
   "correlation_patients": 0.33233082706766914,
-  "ic_bas": -0.07649236352289208,
-  "ic_haut": 0.627292128603104,
+  "ic_bas": -0.06890299440951797,
+  "ic_haut": 0.6562802940122736,
   "biais_normalise": -1.7080521224035847,
   "dispersion_normalisee": 1.0829675580304778,
   "ecart_type_patients": 0.003699604844397307,
-  "verdict": "peu fiable"
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.2796992481203007,
+   "ic_bas": -0.2538388195834298,
+   "ic_haut": 0.7263859778145493
+  }
  },
  "dimension_fractale": {
   "correlation_patients": 0.362406015037594,
-  "ic_bas": -0.05320886006566003,
-  "ic_haut": 0.667687595712098,
+  "ic_bas": -0.04007117998714638,
+  "ic_haut": 0.673351226993865,
   "biais_normalise": -0.39685498523509843,
   "dispersion_normalisee": 1.199970929883193,
   "ecart_type_patients": 0.02480574373425903,
-  "verdict": "peu fiable"
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.3954887218045112,
+   "ic_bas": -0.14983287171853044,
+   "ic_haut": 0.7919592913109779
+  }
  },
  "calibre_moyen": {
   "correlation_patients": 0.42105263157894735,
-  "ic_bas": -0.09083954720658481,
-  "ic_haut": 0.7818181818181819,
+  "ic_bas": -0.07145963806365814,
+  "ic_haut": 0.7936423178198296,
   "biais_normalise": 3.2827073795756316,
   "dispersion_normalisee": 1.0736525765463234,
   "ecart_type_patients": 0.16329735065002787,
-  "verdict": "peu fiable"
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.5593984962406015,
+   "ic_bas": 0.13743356112376612,
+   "ic_haut": 0.8431311412746119
+  }
  },
  "calibre_principal": {
   "correlation_patients": 0.11127819548872178,
-  "ic_bas": -0.346723870715339,
-  "ic_haut": 0.5582940692195706,
+  "ic_bas": -0.36303576355359357,
+  "ic_haut": 0.5490167537868205,
   "biais_normalise": 1.0968967717338747,
   "dispersion_normalisee": 1.098949701371048,
   "ecart_type_patients": 0.6143779497436146,
-  "verdict": "peu fiable"
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.2601503759398496,
+   "ic_bas": -0.23951545871878696,
+   "ic_haut": 0.6945668693009115
+  }
  },
  "tortuosite": {
   "correlation_patients": 0.46917293233082696,
-  "ic_bas": 0.04250091809230813,
-  "ic_haut": 0.8093851430994372,
+  "ic_bas": 0.03287514854547526,
+  "ic_haut": 0.8331281277858085,
   "biais_normalise": -0.8039097012050154,
   "dispersion_normalisee": 0.9575473243580632,
   "ecart_type_patients": 0.024196314642925383,
-  "verdict": "peu fiable"
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.5609022556390978,
+   "ic_bas": 0.18376488420789455,
+   "ic_haut": 0.8119445104355179
+  }
  },
  "bifurcations": {
   "correlation_patients": 0.13533834586466165,
-  "ic_bas": -0.3222266351919499,
-  "ic_haut": 0.5564345193035577,
+  "ic_bas": -0.3541210503405911,
+  "ic_haut": 0.5603662241653882,
   "biais_normalise": -1.5033972756487637,
   "dispersion_normalisee": 1.0366587012578716,
   "ecart_type_patients": 2.0762160760635213,
-  "verdict": "peu fiable"
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.03458646616541353,
+   "ic_bas": -0.4617490494296577,
+   "ic_haut": 0.5665676579038881
+  }
  },
  "fragments": {
   "correlation_patients": 0.09891225177540695,
-  "ic_bas": -0.36057623221282203,
-  "ic_haut": 0.48400347790103443,
+  "ic_bas": -0.3432370823908154,
+  "ic_haut": 0.5008864643027459,
   "biais_normalise": 13.059032037521364,
   "dispersion_normalisee": 3.683760776427254,
   "ecart_type_patients": 1.500876936643164,
-  "verdict": "peu fiable"
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.6331019350010813,
+   "ic_bas": 0.288692524627536,
+   "ic_haut": 0.8627679793408406
+  }
+ },
+ "tortuosite_ponderee": {
+  "correlation_patients": 0.7338345864661654,
+  "ic_bas": 0.33933034206590446,
+  "ic_haut": 0.9515536856512307,
+  "biais_normalise": -0.5891742535426716,
+  "dispersion_normalisee": 0.6667946776936395,
+  "ecart_type_patients": 0.02199281212676911,
+  "verdict": "approximative",
+  "accord_experts": {
+   "correlation_patients": 0.7503759398496239,
+   "ic_bas": 0.4852091635182341,
+   "ic_haut": 0.8906647370393461
+  }
+ },
+ "densite_longueur_principale": {
+  "correlation_patients": 0.41654135338345866,
+  "ic_bas": -0.03950983121668712,
+  "ic_haut": 0.761488724833147,
+  "biais_normalise": 1.6783498260061676,
+  "dispersion_normalisee": 1.274318060606295,
+  "ecart_type_patients": 0.0018645323589063741,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.4195488721804511,
+   "ic_bas": 0.006776794544943023,
+   "ic_haut": 0.7416939354904122
+  }
+ },
+ "dimension_fractale_principale": {
+  "correlation_patients": 0.312781954887218,
+  "ic_bas": -0.12616122713141564,
+  "ic_haut": 0.648957788699501,
+  "biais_normalise": 0.9893999622887357,
+  "dispersion_normalisee": 1.1893030724147708,
+  "ecart_type_patients": 0.024741045863035695,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.5609022556390978,
+   "ic_bas": 0.164082725572915,
+   "ic_haut": 0.8178021858188337
+  }
  }
 }

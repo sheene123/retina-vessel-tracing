@@ -1,10 +1,13 @@
 """Télécharge DRIVE et le range selon l'arborescence officielle.
 
-Deux sources possibles :
-- l'archive officielle de https://drive.grand-challenge.org (inscription requise) :
-  `python scripts/telecharger_drive.py --zip DRIVE.zip` ;
+Trois sources possibles :
 - par défaut, un miroir public Hugging Face (images + annotations du 1er expert,
-  sans masques FOV ni 2e observateur ; les masques sont alors estimés à la volée).
+  sans masques FOV ni 2e observateur ; les masques sont alors estimés à la volée) ;
+- `--second-observateur` : ajoute les annotations du second expert (partie test) depuis
+  une copie de l'archive officielle publiée sur Kaggle (zionfuo/drive2004, via kagglehub),
+  pour mesurer l'accord entre experts ;
+- l'archive officielle de https://drive.grand-challenge.org (inscription requise) :
+  `python scripts/telecharger_drive.py --zip DRIVE.zip`.
 
 Résultat : data/DRIVE/{training,test}/{images,1st_manual}/...
 """
@@ -60,15 +63,31 @@ def depuis_zip(archive: Path, destination: Path) -> None:
                 cible.write_bytes(z.read(membre))
 
 
+def second_observateur(destination: Path) -> int:
+    """Copie test/2nd_manual depuis l'archive complète (images identiques au miroir, vérifié)."""
+    import kagglehub
+
+    source = Path(kagglehub.dataset_download("zionfuo/drive2004")) / "DRIVE" / "test" / "2nd_manual"
+    cible = destination / "test" / "2nd_manual"
+    cible.mkdir(parents=True, exist_ok=True)
+    fichiers = sorted(source.glob("*_manual2.gif"))
+    for fichier in fichiers:
+        shutil.copy(fichier, cible / fichier.name)
+    return len(fichiers)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--zip", type=Path, help="archive officielle DRIVE.zip")
     parser.add_argument("--destination", type=Path, default=Path("data/DRIVE"))
+    parser.add_argument("--second-observateur", action="store_true", help="ajoute les annotations du 2e expert")
     args = parser.parse_args()
     if args.zip:
         depuis_zip(args.zip, args.destination)
     else:
         depuis_miroir(args.destination)
+    if args.second_observateur:
+        print(f"{second_observateur(args.destination)} annotations du second expert ajoutées")
     n = len(list(args.destination.glob("*/images/*")))
     print(f"{n} images dans {args.destination}")
     return 0 if n == 40 else 1

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from vaisseaux.biomarqueurs import dimension_fractale, mesurer, tortuosite
+from vaisseaux.biomarqueurs import dimension_fractale, mesurer, reseau_principal, tortuosite, tortuosite_ponderee
 
 
 def _masque(n=200):
@@ -54,3 +54,21 @@ def test_bifurcation_et_fragments():
     m = mesurer(image, _masque())
     assert m["bifurcations"] > 0
     assert m["fragments"] == 2
+
+
+def test_tortuosite_ponderee_ignore_les_courts_segments():
+    lignes, colonnes = np.mgrid[:200, :200]
+    rayon = np.hypot(lignes - 120, colonnes - 100)
+    arc = (np.abs(rayon - 60) <= 1.5) & (lignes <= 120)
+    assert tortuosite_ponderee(_squelette(arc)) == pytest.approx(np.pi / 2, abs=0.06)
+    court = np.zeros((200, 200), dtype=bool)
+    court[50:53, 20:45] = True  # 25 px : ignoré au seuil de 40 px
+    assert np.isnan(tortuosite_ponderee(_squelette(court)))
+
+
+def test_reseau_principal_retire_les_capillaires():
+    image = np.zeros((200, 200), dtype=bool)
+    image[98:103, 20:180] = True  # gros vaisseau, 5 px
+    image[20:90, 60] = True  # capillaire, 1 px
+    principal = reseau_principal(image)
+    assert principal[100, 100] and not principal[50, 60]

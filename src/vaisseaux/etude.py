@@ -49,7 +49,7 @@ SEUILS_UNET = (0.3, 0.5, 0.7)
 METRIQUES = ("exactitude", "sensibilite", "specificite", "dice", "mcc", "cl_dice", "erreur_b0", "erreur_b1", "hd95")
 PLUS_EST_MIEUX = {"exactitude", "sensibilite", "specificite", "dice", "mcc", "cl_dice"}
 CIBLES = (*MARQUEURS, "trace")
-FAMILLES = ("Frangi", "U-Net", "Perturbation")
+FAMILLES = ("Frangi", "U-Net", "Humain", "Perturbation")
 
 # ------------------------------------------------------------------ segmentations
 
@@ -150,6 +150,8 @@ def _image(tache: tuple) -> list[dict]:
         methodes.append((f"frangi_{nom}", "Frangi", (carte >= seuil) & im.masque))
     for seuil in SEUILS_UNET:
         methodes.append((f"unet_p{int(100 * seuil)}", "U-Net", (probas_unet >= seuil) & im.masque))
+    if im.verite2 is not None:  # second expert : référence humaine (archive officielle DRIVE)
+        methodes.append(("second_expert", "Humain", im.verite2 & im.masque))
     for nom, binaire in perturbations(im.verite, im.masque, rng).items():
         methodes.append((nom, "Perturbation", binaire))
     lignes = []
@@ -274,7 +276,7 @@ def fiabilite(lignes: list[dict], n: int = 2000, graine: int = 0) -> dict:
 def analyser(lignes: list[dict]) -> dict:
     sous_ensembles = {
         "toutes": lignes,
-        "segmenteurs_reels": [lg for lg in lignes if lg["famille"] != "Perturbation"],
+        "segmenteurs_reels": [lg for lg in lignes if lg["famille"] in ("Frangi", "U-Net")],
     }
     resultat: dict = {"pouvoir_predictif": {}, "pouvoir_selection": {}, "par_methode": {}}
     for nom, sous in sous_ensembles.items():
@@ -324,6 +326,9 @@ NOMS_CIBLES = {
     "bifurcations": "Bifurcations",
     "fragments": "Fragmentation",
     "trace": "Tracé",
+    "tortuosite_ponderee": "Tortuosité pondérée",
+    "densite_longueur_principale": "Dens. longueur princ.",
+    "dimension_fractale_principale": "Dim. fractale princ.",
 }
 
 
@@ -403,14 +408,19 @@ def rapport(resultat: dict, infos: dict) -> str:
             "classement). Dispersion : part aléatoire de l'erreur, dans la même unité (au-dessus de 1, elle dépasse "
             "les différences entre patients).",
             "",
-            "| Marqueur | U-Net 0,5 : corrélation | biais | dispersion | Frangi NL-means : corrélation | Meilleure méthode réelle |",
-            "|---|---|---|---|---|---|",
+            "| Marqueur | Second expert : corrélation (plafond humain) | U-Net 0,5 : corrélation | biais | dispersion "
+            "| Frangi NL-means : corrélation | Meilleure méthode réelle |",
+            "|---|---|---|---|---|---|---|",
         ]
         for k in MARQUEURS:
             u, fr_ = f["unet_p50"][k], f["frangi_clahe_nl_means"][k]
             meilleure = max(reelles, key=lambda m: np.nan_to_num(f[m][k]["correlation_patients"], nan=-2))
+            h = f.get("second_expert", {}).get(k)
+            humain = (
+                "n/d" if h is None else f"{h['correlation_patients']:+.2f} [{h['ic_bas']:+.2f} ; {h['ic_haut']:+.2f}]"
+            )
             lignes.append(
-                f"| {NOMS_CIBLES[k]} | {u['correlation_patients']:+.2f} [{u['ic_bas']:+.2f} ; {u['ic_haut']:+.2f}] | "
+                f"| {NOMS_CIBLES[k]} | {humain} | {u['correlation_patients']:+.2f} [{u['ic_bas']:+.2f} ; {u['ic_haut']:+.2f}] | "
                 f"{u['biais_normalise']:+.2f} | {u['dispersion_normalisee']:.2f} | {fr_['correlation_patients']:+.2f} | "
                 f"{meilleure} : {f[meilleure][k]['correlation_patients']:+.2f} |"
             )
@@ -429,7 +439,7 @@ def figures(resultat: dict, dossier: Path) -> None:
         valeurs = np.array(
             [[np.nan if table[m][c] is None else table[m][c]["moyenne"] for c in CIBLES] for m in METRIQUES]
         )
-        fig, ax = plt.subplots(figsize=(10.5, 5.8), constrained_layout=True)
+        fig, ax = plt.subplots(figsize=(12.5, 6.2), constrained_layout=True)
         image = ax.imshow(valeurs, cmap="RdBu", vmin=-1, vmax=1, aspect="auto")
         ax.set_xticks(range(len(CIBLES)), [NOMS_CIBLES[c] for c in CIBLES], rotation=35, ha="right")
         ax.set_yticks(range(len(METRIQUES)), [NOMS_METRIQUES[m] for m in METRIQUES])
@@ -455,8 +465,8 @@ def figures(resultat: dict, dossier: Path) -> None:
         fig.savefig(dossier / f"pouvoir_predictif_{nom}.png", dpi=130)
         plt.close(fig)
 
-    couleurs = {"Frangi": "#0072B2", "U-Net": "#E69F00", "Perturbation": "#009E73"}
-    formes = {"Frangi": "o", "U-Net": "s", "Perturbation": "^"}
+    couleurs = {"Frangi": "#0072B2", "U-Net": "#E69F00", "Humain": "#CC79A7", "Perturbation": "#009E73"}
+    formes = {"Frangi": "o", "U-Net": "s", "Humain": "D", "Perturbation": "^"}
     fig, axes = plt.subplots(1, 3, figsize=(13, 4.4), constrained_layout=True)
     for ax, cible in zip(axes, ("calibre_moyen", "tortuosite", "dimension_fractale"), strict=True):
         for famille in FAMILLES:
@@ -526,7 +536,14 @@ def lancer(racine: Path, sortie: Path, modele_unet: Path, n_paires: int, travail
 def _ecrire_fiabilite(resultat: dict, sortie: Path) -> None:
     """Fiabilité des mesures du U-Net (seuil 0,5), lue par la démo web."""
     if "fiabilite" in resultat:
-        (sortie / "fiabilite_unet.json").write_text(json.dumps(resultat["fiabilite"]["unet_p50"], indent=1))
+        fiab = resultat["fiabilite"]
+        donnees = {}
+        for k, v in fiab["unet_p50"].items():
+            donnees[k] = dict(v)
+            if "second_expert" in fiab:
+                h = fiab["second_expert"][k]
+                donnees[k]["accord_experts"] = {c: h[c] for c in ("correlation_patients", "ic_bas", "ic_haut")}
+        (sortie / "fiabilite_unet.json").write_text(json.dumps(donnees, indent=1))
 
 
 def reanalyser(sortie: Path) -> dict:

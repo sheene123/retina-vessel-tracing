@@ -57,10 +57,12 @@ rehaussée, carte de Frangi, vérité terrain), comparer les cartes des six cha�
 Sur les images DRIVE, le tracé est noté face à l'annotation experte.
 
 **Mesures vasculaires.** Un clic lance le U-Net dans le navigateur (ONNX Runtime Web, environ 2 s),
-puis mesure 8 marqueurs : densité, densité de longueur, dimension fractale, calibre moyen et des
-gros vaisseaux, tortuosité, bifurcations, fragments. Sur les images DRIVE, chaque mesure est
+puis mesure 11 marqueurs : densité, densité de longueur, dimension fractale, calibre moyen et des
+gros vaisseaux, tortuosité, bifurcations, fragments, et trois versions robustes. Sur les images DRIVE, chaque mesure est
 comparée à celle de l'expert. Chaque mesure porte aussi un indicateur de fiabilité tiré de
-[l'étude](docs/etude_metriques.md) : la mesure classe-t-elle les patients comme l'expert ?
+[l'étude](docs/etude_metriques.md) (la mesure classe-t-elle les patients comme l'expert ?) et
+l'accord entre deux experts sur ce marqueur. Trois images de test sont tirées au hasard à chaque
+visite.
 C'est une démonstration de recherche, pas un diagnostic.
 
 La démo web ([demo/web/](demo/web/)) exécute le paquet Python **dans le navigateur** avec
@@ -139,10 +141,11 @@ de santé, sur des segmentations choisies pour leur Dice. L'étude
   calibre est faux de 35 %. Les deux métriques ont des angles morts complémentaires.
 - À Dice égal, le seuil du U-Net change l'erreur de calibre du simple au double : il faut le
   choisir selon le marqueur.
-- **Les mesures ne permettent pas encore de comparer des patients** : le U-Net classe les 20
-  patients comme l'expert avec une corrélation de 0,10 à 0,47 seulement, et la part aléatoire de
-  son erreur est aussi grande que les différences entre patients. Avant de relier ces marqueurs à
-  un risque cardiovasculaire, il faut améliorer leur précision.
+- **Même deux experts ne classent pas les patients de la même façon** sur la plupart des marqueurs
+  (corrélation de 0,03 à 0,63 entre le premier et le second expert DRIVE), et le U-Net fait
+  presque aussi bien qu'eux. Le problème vient des définitions des marqueurs, pas du modèle.
+- **Une tortuosité robuste** (longs segments pondérés par leur longueur) fait monter l'accord
+  entre experts à 0,75, et **le U-Net y atteint le niveau humain (0,73)**.
 
 ![Pouvoir prédictif des métriques](resultats/etude_metriques/pouvoir_predictif_segmenteurs_reels.png)
 
@@ -153,6 +156,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 python scripts/telecharger_drive.py          # ou --zip DRIVE.zip (archive officielle)
+python scripts/telecharger_drive.py --second-observateur   # annotations du 2e expert (étude)
 pytest                                       # tests (images synthétiques, pas besoin de DRIVE)
 python -m vaisseaux.benchmark                # évaluation complète sur DRIVE
 pip install -e ".[ml]" && python -m vaisseaux.unet && python -m vaisseaux.etude   # étude des métriques

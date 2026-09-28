@@ -61,6 +61,7 @@
   .rangee { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .choix-image { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .choix-image button { padding: 8px 4px; font-weight: 500; }
+  .lien-bouton { background: none; border: none; padding: 4px 0; margin-top: 4px; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; font-size: 0.88rem; }
   .choix-image button small { display: block; opacity: 0.72; font-size: 0.75rem; font-weight: 400; }
   .bouton { display: block; margin-top: 8px; text-align: center; font-weight: 500; }
   .bouton input { display: none; }
@@ -186,9 +187,11 @@
         santé vasculaire, notamment du risque cardiovasculaire.</p>
       <button type="button" id="mesurer" class="principal" disabled>Mesurer les vaisseaux</button>
       <div id="resultatMesures" aria-live="polite"></div>
-      <p class="aide avertissement">Démonstration de recherche, pas un diagnostic. La colonne « Fiabilité » vient de notre
-        étude : elle indique si la mesure du U-Net classe les patients comme un expert. Sur les 20 patients de test, aucune
-        mesure ne le fait encore de façon fiable
+      <p class="aide avertissement">Démonstration de recherche, pas un diagnostic. Les deux dernières colonnes viennent de
+        notre étude sur les 20 patients de test : « Fiabilité » indique si la mesure du U-Net classe les patients comme un
+        expert (corrélation de rang, 1 = identique), « Accord entre 2 experts » donne la même valeur pour un second expert
+        humain. Même les experts divergent sur la plupart des marqueurs ; les versions robustes, définies pour que les
+        experts s'accordent mieux, sont plus fiables
         (<a href="https://github.com/sheene123/retina-vessel-tracing/blob/main/docs/etude_metriques.md">voir l'étude</a>).</p>
     </section>
 
@@ -204,8 +207,10 @@
   <aside class="panneau" aria-label="Réglages">
     <h2>Image</h2>
     <div class="choix-image" id="exemples"></div>
+    <button type="button" id="autresExemples" class="lien-bouton">Autres exemples</button>
     <label class="bouton">Utiliser ma propre image<input type="file" id="fichier" accept="image/*,.tif,.tiff"></label>
-    <p class="aide">Les trois exemples (base publique DRIVE) sont annotés par un expert : le tracé y est noté.</p>
+    <p class="aide">Trois images tirées au hasard parmi les 20 images de test de la base publique DRIVE, annotées par un
+      expert : le tracé et les mesures y sont comparés à l'expert.</p>
 
     <h2>Prétraitement</h2>
     <select id="configA" aria-label="Prétraitement du tracé"></select>
@@ -252,7 +257,31 @@
 <script>
 const MIROIR = "https://huggingface.co/datasets/Zomba/DRIVE-digital-retinal-images-for-vessel-extraction/resolve/main";
 const ROUE = "vaisseaux-0.1.0-py3-none-any.whl";
-const EXEMPLES = [["01", "Rétine 1"], ["02", "Rétine 2"], ["19", "Rétine 3"]];
+// images de test DRIVE (jamais vues par le U-Net), dont trois sont tirées au hasard à chaque visite
+const IMAGES_TEST = Array.from({ length: 20 }, (_, i) => String(i + 1).padStart(2, "0"));
+let exemples = [];
+
+function tirerExemples() {
+  const precedents = new Set(exemples);
+  const candidats = IMAGES_TEST.filter((id) => !precedents.has(id));
+  for (let i = candidats.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidats[i], candidats[j]] = [candidats[j], candidats[i]];
+  }
+  exemples = candidats.slice(0, 3).sort();
+  const conteneur = $("exemples");
+  conteneur.replaceChildren();
+  for (const id of exemples) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.id = id;
+    b.innerHTML = `Image ${Number(id)}<small>annotée</small>`;
+    b.addEventListener("click", () => chargerExemple(id));
+    b.classList.toggle("actif", id === etat.source);
+    conteneur.append(b);
+  }
+  if (etat.pret) reglagesActifs(!etat.occupe);
+}
 const CONFIGS = {
   clahe_nl_means: ["CLAHE + NL-means", "Recommandé. Égalise le contraste, puis retire le bruit en comparant des motifs semblables : donne les tracés les plus fidèles sur l'ensemble de test."],
   vert_brut: ["Canal vert brut", "Aucune correction : la version la plus simple, qui sert de référence."],
@@ -265,10 +294,13 @@ const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Contraste
 const MARQUEURS = [
   ["densite", "Densité vasculaire", "part de la rétine couverte par les vaisseaux", (v) => `${fr(100 * v, 1)} %`],
   ["densite_longueur", "Densité de longueur", "longueur totale des vaisseaux rapportée à la surface", (v) => `${fr(100 * v, 2)} %`],
+  ["densite_longueur_principale", "Densité de longueur, version robuste", "réseau principal seulement, sans les capillaires", (v) => `${fr(100 * v, 2)} %`],
   ["dimension_fractale", "Complexité du réseau", "dimension fractale : plus elle est haute, plus le réseau est ramifié", (v) => fr(v, 3)],
+  ["dimension_fractale_principale", "Complexité, version robuste", "dimension fractale du réseau principal, sans les capillaires", (v) => fr(v, 3)],
   ["calibre_moyen", "Calibre moyen", "largeur moyenne des vaisseaux, en pixels", (v) => `${fr(v, 2)} px`],
   ["calibre_principal", "Calibre des gros vaisseaux", "largeur des 10 % de vaisseaux les plus larges", (v) => `${fr(v, 2)} px`],
   ["tortuosite", "Tortuosité", "longueur d'un vaisseau divisée par la distance à vol d'oiseau (1 = droit)", (v) => fr(v, 3)],
+  ["tortuosite_ponderee", "Tortuosité, version robuste", "longs segments seulement, pondérés par leur longueur", (v) => fr(v, 3)],
   ["bifurcations", "Bifurcations", "points de ramification pour 10 000 pixels de rétine", (v) => fr(v, 1)],
   ["fragments", "Fragments", "morceaux séparés : un réseau réel est d'un seul tenant, les morceaux viennent de la segmentation", (v) => fr(v, 0)],
 ];
@@ -357,7 +389,7 @@ async function demarrer() {
     } catch { /* sans fichier de fiabilité, la colonne reste vide */ }
     voile("Chargement d'une image d'exemple", "Image DRIVE et annotation de l'expert", 3);
     etat.pret = true;
-    await chargerExemple("02");
+    await chargerExemple(exemples[0]);
     voile("");
   } catch (e) {
     console.error(e);
@@ -702,7 +734,7 @@ function badge(f) {
 function afficherMesures(r) {
   const zone = $("resultatMesures");
   const expert = MARQUEURS.some(([k]) => r.marqueurs[k].expert != null);
-  const entetes = ["Mesure", "U-Net", ...(expert ? ["Expert", "Écart"] : []), "Fiabilité pour comparer des patients"];
+  const entetes = ["Mesure", "U-Net", ...(expert ? ["Expert", "Écart"] : []), "Fiabilité pour comparer des patients", "Accord entre 2 experts"];
   let html = '<div class="tableau"><table class="mesures"><thead><tr>' + entetes.map((h) => `<th>${h}</th>`).join("") + "</tr></thead><tbody>";
   for (const [cle, nom, description, format] of MARQUEURS) {
     const m = r.marqueurs[cle];
@@ -710,7 +742,9 @@ function afficherMesures(r) {
     const colonnesExpert = expert
       ? `<td>${m.expert == null ? "n/d" : format(m.expert)}</td><td>${m.ecart_relatif == null ? "n/d" : `${fr(100 * m.ecart_relatif, 0)} %`}</td>`
       : "";
-    html += `<tr><td>${echapper(nom)}<small>${echapper(description)}</small></td><td>${valeur}</td>${colonnesExpert}<td>${badge(m.fiabilite)}</td></tr>`;
+    const accord = m.fiabilite?.accord_experts;
+    const humain = accord ? `<span title="${echapper(`IC 95 % ${fr(accord.ic_bas, 2)} à ${fr(accord.ic_haut, 2)}`)}">${fr(accord.correlation_patients, 2)}</span>` : "n/d";
+    html += `<tr><td>${echapper(nom)}<small>${echapper(description)}</small></td><td>${valeur}</td>${colonnesExpert}<td>${badge(m.fiabilite)}</td><td>${humain}</td></tr>`;
   }
   html += "</tbody></table></div>";
   if (r.dice != null) html += `<p class="aide">Dice de la segmentation U-Net sur cette image : ${fr(r.dice, 3)}. La vue « Segmentation U-Net » montre ce que le réseau a détecté.</p>`;
@@ -719,14 +753,11 @@ function afficherMesures(r) {
 }
 
 function initialiser() {
-  for (const [id, nom] of EXEMPLES) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.dataset.id = id;
-    b.innerHTML = `${nom}<small>annotée</small>`;
-    b.addEventListener("click", () => chargerExemple(id));
-    $("exemples").append(b);
-  }
+  tirerExemples();
+  $("autresExemples").addEventListener("click", async () => {
+    tirerExemples();
+    await chargerExemple(exemples[0]);
+  });
   for (const sel of [$("configA"), $("configB")]) for (const [cle, [nom]] of Object.entries(CONFIGS)) sel.add(new Option(nom, cle));
   $("configA").value = "clahe_nl_means";
   $("configB").value = "clahe_bilateral";
