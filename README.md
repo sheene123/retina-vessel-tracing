@@ -149,6 +149,22 @@ de santé, sur des segmentations choisies pour leur Dice. L'étude
 
 ![Pouvoir prédictif des métriques](resultats/etude_metriques/pouvoir_predictif_segmenteurs_reels.png)
 
+## Étude : repérer une rétinopathie hypertensive
+
+Premier pas vers le risque cardiovasculaire : sur ODIR-5K (2 920 yeux, 104 atteints), on
+distingue les yeux avec une rétinopathie hypertensive des fonds d'œil normaux, en validation
+croisée groupée par patient ([docs/hypertension.md](docs/hypertension.md)).
+
+| Modèle | AUROC [IC 95 %] |
+|---|---|
+| Réseau (ResNet-18, image entière) | **0,82** [0,76 ; 0,87] |
+| Marqueurs vasculaires du projet (11) | 0,72 [0,65 ; 0,78] |
+| Témoin : âge et sexe | 0,53 [0,46 ; 0,61] |
+
+L'œil contient bien l'information, et les marqueurs vasculaires en captent une partie. Mais
+avec 3,6 % de cas positifs, seuls 9 % des yeux signalés par le réseau sont réellement atteints :
+c'est un résultat de recherche, pas un outil de dépistage.
+
 ## Démarrage rapide
 
 ```bash
@@ -175,6 +191,7 @@ src/vaisseaux/
   biomarqueurs.py    marqueurs vasculaires (densité, dimension fractale, calibre, tortuosité…)
   unet.py            U-Net de segmentation (PyTorch, optionnel)
   etude.py           étude « métriques de segmentation contre marqueurs »
+  hypertension.py    étude rétinopathie hypertensive (ODIR-5K) : marqueurs contre réseau
   benchmark.py       protocole d'évaluation entraînement / test
   api.py             API FastAPI
 scripts/             téléchargement de DRIVE, figure, déploiement du Space
@@ -191,6 +208,8 @@ resultats/           résultats versionnés du dernier benchmark
 - [x] Interface web : tracé, comparaison, évaluation, images personnelles ([démo en ligne](https://huggingface.co/spaces/sheenee261/retina-vessel-tracing))
 - [x] U-Net de segmentation et étude « métriques contre marqueurs vasculaires »
 - [x] Mesures vasculaires dans la démo (U-Net en ONNX), avec leur fiabilité mesurée
+- [x] Accord entre experts et marqueurs robustes (tortuosité pondérée au niveau humain)
+- [x] Rétinopathie hypertensive sur ODIR-5K : réseau 0,82, marqueurs 0,72 d'AUROC
 - [ ] Améliorer la précision des marqueurs (plus de données, marqueurs artère/veine) avant tout
       usage lié au risque cardiovasculaire
 - [ ] Prétraitement : réglage adaptatif du débruitage, correction d'illumination

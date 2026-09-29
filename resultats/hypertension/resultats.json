@@ -1,0 +1,52 @@
+{
+ "reseau": {
+  "auroc": 0.817854020979021,
+  "ic_bas": 0.76408094378618,
+  "ic_haut": 0.8707418964218824
+ },
+ "marqueurs": {
+  "auroc": 0.7185997596153846,
+  "ic_bas": 0.649974230895203,
+  "ic_haut": 0.7816450972233032
+ },
+ "age_sexe": {
+  "auroc": 0.5349291821459791,
+  "ic_bas": 0.4562030480725708,
+  "ic_haut": 0.611856684732351
+ },
+ "reseau_moins_marqueurs": {
+  "difference": 0.09925426136363646,
+  "ic_bas": 0.033810971725540956,
+  "ic_haut": 0.16286259430610267
+ },
+ "reseau_moins_age_sexe": {
+  "difference": 0.282924838833042,
+  "ic_bas": 0.18582919393278144,
+  "ic_haut": 0.3768256119487208
+ },
+ "marqueurs_moins_age_sexe": {
+  "difference": 0.18367057746940552,
+  "ic_bas": 0.08171927479493978,
+  "ic_haut": 0.28359808085890476
+ },
+ "coefficients_marqueurs": {
+  "densite": 1.0547411088209606,
+  "densite_longueur": 0.2682254783368866,
+  "dimension_fractale": 0.7529067989474494,
+  "calibre_moyen": -0.43826049875889,
+  "calibre_principal": 0.5288055793112975,
+  "tortuosite": 0.38952419023820467,
+  "bifurcations": 0.3076693191025109,
+  "fragments": 0.524178716762362,
+  "tortuosite_ponderee": -0.21167116054919743,
+  "densite_longueur_principale": -1.5971384373421005,
+  "dimension_fractale_principale": -0.4907694852721768
+ },
+ "effectifs": {
+  "yeux": 2920,
+  "yeux_hypertension": 104,
+  "patients": 1883,
+  "patients_hypertension": 68
+ },
+ "duree_s": 607.4
+}
