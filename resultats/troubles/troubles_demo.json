@@ -1,0 +1,150 @@
+{
+ "ordre": [
+  "diabete",
+  "glaucome",
+  "cataracte",
+  "dmla",
+  "hypertension",
+  "myopie"
+ ],
+ "troubles": {
+  "diabete": {
+   "nom": "Rétinopathie diabétique",
+   "a": 0.5278932452201843,
+   "b": -0.6002472639083862,
+   "auroc": 0.8375112488252613,
+   "ic_bas": 0.8249626063576412,
+   "ic_haut": 0.849902184276706,
+   "detectes_des_possible": 0.7939464493597206,
+   "niveaux": {
+    "peu_probable": {
+     "yeux": 3533,
+     "part_atteints": 0.10019813189923578
+    },
+    "possible": {
+     "yeux": 1744,
+     "part_atteints": 0.2947247706422018
+    },
+    "probable": {
+     "yeux": 1111,
+     "part_atteints": 0.7650765076507651
+    }
+   }
+  },
+  "glaucome": {
+   "nom": "Glaucome",
+   "a": 0.45599085092544556,
+   "b": -1.3573497533798218,
+   "auroc": 0.8988683316721984,
+   "ic_bas": 0.8734516850267201,
+   "ic_haut": 0.9206760731384082,
+   "detectes_des_possible": 0.5404411764705882,
+   "niveaux": {
+    "peu_probable": {
+     "yeux": 6036,
+     "part_atteints": 0.0207090788601723
+    },
+    "possible": {
+     "yeux": 203,
+     "part_atteints": 0.3448275862068966
+    },
+    "probable": {
+     "yeux": 112,
+     "part_atteints": 0.6875
+    }
+   }
+  },
+  "cataracte": {
+   "nom": "Cataracte",
+   "a": 0.6262082457542419,
+   "b": -1.1307744979858398,
+   "auroc": 0.9766023723253796,
+   "ic_bas": 0.9632553625976563,
+   "ic_haut": 0.9874521444301361,
+   "detectes_des_possible": 0.8704318936877077,
+   "niveaux": {
+    "peu_probable": {
+     "yeux": 6037,
+     "part_atteints": 0.006460162332284247
+    },
+    "possible": {
+     "yeux": 79,
+     "part_atteints": 0.31645569620253167
+    },
+    "probable": {
+     "yeux": 276,
+     "part_atteints": 0.8586956521739131
+    }
+   }
+  },
+  "dmla": {
+   "nom": "DMLA (dégénérescence maculaire liée à l'âge)",
+   "a": 0.5237279534339905,
+   "b": -1.1189799308776855,
+   "auroc": 0.9171351973255765,
+   "ic_bas": 0.8948199791526823,
+   "ic_haut": 0.9379317674795175,
+   "detectes_des_possible": 0.6344086021505376,
+   "niveaux": {
+    "peu_probable": {
+     "yeux": 5911,
+     "part_atteints": 0.017255963457959735
+    },
+    "possible": {
+     "yeux": 159,
+     "part_atteints": 0.33962264150943394
+    },
+    "probable": {
+     "yeux": 153,
+     "part_atteints": 0.803921568627451
+    }
+   }
+  },
+  "hypertension": {
+   "nom": "Rétinopathie hypertensive",
+   "a": 0.4015471339225769,
+   "b": -1.3222932815551758,
+   "auroc": 0.8172001008064517,
+   "ic_bas": 0.7754339656481686,
+   "ic_haut": 0.8567927735699441,
+   "detectes_des_possible": 0.23958333333333334,
+   "niveaux": {
+    "peu_probable": {
+     "yeux": 6267,
+     "part_atteints": 0.023296633157810755
+    },
+    "possible": {
+     "yeux": 110,
+     "part_atteints": 0.34545454545454546
+    },
+    "probable": {
+     "yeux": 15,
+     "part_atteints": 0.5333333333333333
+    }
+   }
+  },
+  "myopie": {
+   "nom": "Myopie forte",
+   "a": 0.6420100331306458,
+   "b": -1.314265489578247,
+   "auroc": 0.9943281377343114,
+   "ic_bas": 0.9911441469345319,
+   "ic_haut": 0.9970389864248093,
+   "detectes_des_possible": 0.8984375,
+   "niveaux": {
+    "peu_probable": {
+     "yeux": 6110,
+     "part_atteints": 0.00425531914893617
+    },
+    "possible": {
+     "yeux": 47,
+     "part_atteints": 0.3829787234042553
+    },
+    "probable": {
+     "yeux": 234,
+     "part_atteints": 0.905982905982906
+    }
+   }
+  }
+ }
+}

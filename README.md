@@ -166,6 +166,33 @@ L'œil contient bien l'information, et les marqueurs vasculaires en captent une 
 avec 3,6 % de cas positifs, seuls 9 % des yeux signalés par le réseau sont réellement atteints :
 c'est un résultat de recherche, pas un outil de dépistage.
 
+## Signes de six troubles de l'œil
+
+La démo propose aussi une estimation indicative de six troubles à partir d'une photo de fond d'œil :
+rétinopathie diabétique, glaucome, cataracte, DMLA, rétinopathie hypertensive et myopie forte.
+L'image est d'abord recadrée automatiquement sur le fond d'œil, puis le modèle ONNX produit une
+probabilité calibrée. L'interface la traduit en trois niveaux simples : **peu probable**,
+**possible** ou **probable** ; les détails techniques restent disponibles séparément.
+
+Le modèle a été évalué sur 6 392 yeux provenant de 3 358 patients d'ODIR-5K, avec séparation par
+patient. Les AUROC hors pli sont comprises entre 0,82 et 0,99 selon le trouble. Ces résultats
+mesurent la capacité à reconnaître des annotations du jeu de données, pas la présence certaine
+d'une maladie chez une personne. La démo est une démonstration de recherche et ne mesure ni la
+tension artérielle ni la correction de lunettes, et ne remplace pas un examen médical.
+
+| Trouble | AUROC [IC 95 %] |
+|---|---|
+| Rétinopathie diabétique | 0,84 [0,82 ; 0,85] |
+| Glaucome | 0,90 [0,87 ; 0,92] |
+| Cataracte | 0,98 [0,96 ; 0,99] |
+| DMLA | 0,92 [0,89 ; 0,94] |
+| Rétinopathie hypertensive | 0,82 [0,78 ; 0,86] |
+| Myopie forte | 0,99 [0,99 ; 1,00] |
+
+La méthodologie, les effectifs et les résultats complets sont dans
+[docs/troubles.md](docs/troubles.md). Les sorties du modèle sont versionnées dans
+[resultats/troubles/](resultats/troubles/).
+
 ## Déploiement continu
 
 Les modèles sont entraînés sur GPU, puis publiés dans un **registre versionné**
@@ -220,6 +247,7 @@ resultats/           résultats versionnés du dernier benchmark
 - [x] Mesures vasculaires dans la démo (U-Net en ONNX), avec leur fiabilité mesurée
 - [x] Accord entre experts et marqueurs robustes (tortuosité pondérée au niveau humain)
 - [x] Rétinopathie hypertensive sur ODIR-5K : réseau 0,82, marqueurs 0,72 d'AUROC
+- [x] Modèle ONNX des six troubles de l'œil, probabilités calibrées et panneau simplifié dans la démo
 - [ ] Améliorer la précision des marqueurs (plus de données, marqueurs artère/veine) avant tout
       usage lié au risque cardiovasculaire
 - [ ] Prétraitement : réglage adaptatif du débruitage, correction d'illumination
