@@ -204,8 +204,12 @@ def entrainer(
     architecture: str = ARCHITECTURE,
     progression=None,
     etape: str = "",
+    part_gpu: float = 1.0,
 ):
-    """`progression` : barre tqdm partagée par tous les entraînements, avancée à chaque lot."""
+    """`progression` : barre tqdm partagée par tous les entraînements, avancée à chaque lot.
+    `part_gpu` < 1 : après chaque lot, pause proportionnelle au temps de calcul pour que le GPU
+    ne travaille en moyenne que cette part du temps (moins de chauffe et de bruit sur un portable,
+    où le pilote ne permet pas de plafonner la puissance)."""
     import torch
 
     appareil = "cuda" if torch.cuda.is_available() else "cpu"
@@ -219,11 +223,15 @@ def entrainer(
     charge = _chargeur(lignes, entrainement=True, images_par_epoque=images_par_epoque)
     optimiseur = torch.optim.AdamW(modele.parameters(), lr=3e-4, weight_decay=1e-4)
     planning = torch.optim.lr_scheduler.OneCycleLR(optimiseur, max_lr=3e-4, total_steps=epoques * len(charge))
+    bridage = appareil == "cuda" and part_gpu < 1
     for epoque in range(epoques):
         modele.train()
         if progression is not None:
             progression.set_description(f"{etape} · époque {epoque + 1}/{epoques}")
         for n, (x, cible) in enumerate(charge):
+            if bridage:
+                torch.cuda.synchronize()
+                debut_lot = time.perf_counter()
             x = x.to(appareil, non_blocking=True, memory_format=torch.channels_last)
             cible = cible.to(appareil, non_blocking=True)
             with torch.autocast(appareil, dtype=torch.bfloat16, enabled=appareil == "cuda"):
@@ -237,6 +245,9 @@ def entrainer(
             perte.backward()
             optimiseur.step()
             planning.step()
+            if bridage:
+                torch.cuda.synchronize()
+                time.sleep((time.perf_counter() - debut_lot) * (1 / part_gpu - 1))
             if progression is not None:
                 progression.update(1)
                 if n % 50 == 0:
@@ -437,6 +448,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--architecture", default=ARCHITECTURE)
     parser.add_argument("--epoques", type=int, default=12)
     parser.add_argument("--images-par-epoque", type=int, default=12000)
+    parser.add_argument(
+        "--gpu-max",
+        type=float,
+        default=0.55,
+        help="part maximale du temps où le GPU calcule (0,55 = 55 %% ; 1 = sans limite)",
+    )
     args = parser.parse_args(argv)
     args.modele.parent.mkdir(parents=True, exist_ok=True)
     verrou = _verrouiller(args.modele.parent / ".entrainement_troubles.verrou")
@@ -476,6 +493,7 @@ def main(argv: list[str] | None = None) -> int:
             args.architecture,
             progression,
             f"validation croisée, pli {k + 1}/{PLIS}",
+            args.gpu_max,
         )
         z[dans] = logits(modele, jeu[dans])
         test = jeu[dans]
@@ -491,7 +509,13 @@ def main(argv: list[str] | None = None) -> int:
         for s in jeu["source"].unique()
     }
     final = entrainer(
-        jeu, args.epoques, args.images_par_epoque, args.architecture, progression, "modèle final (toutes les images)"
+        jeu,
+        args.epoques,
+        args.images_par_epoque,
+        args.architecture,
+        progression,
+        "modèle final (toutes les images)",
+        args.gpu_max,
     )
     progression.close()
     print("évaluation sur le test externe JSIEC et export ONNX…", flush=True)
