@@ -190,7 +190,7 @@ def _chargeur(lignes: pd.DataFrame, entrainement: bool, images_par_epoque: int |
         Images(),
         batch_size=32 if entrainement else 64,
         sampler=echantillonneur,
-        num_workers=8,
+        num_workers=6,  # 8 saturerait la mémoire de WSL (7,5 Go)
         drop_last=entrainement,
         persistent_workers=False,
     )
