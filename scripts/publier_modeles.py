@@ -7,8 +7,10 @@ après validation indépendante et comparaison avec la version en production.
 `python -m vaisseaux.etude` et `python -m vaisseaux.troubles`. Le challenger n'est publié que :
 - s'il passe la validation indépendante (Dice du U-Net recalculé sur DRIVE, modèle des troubles
   fonctionnel) ;
-- s'il ne régresse pas face au champion (dernière version publiée) : Dice du U-Net et AUROC de
-  chaque trouble, avec une petite tolérance pour le bruit d'entraînement.
+- s'il ne régresse pas face au champion (dernière version publiée) : Dice du U-Net, et AUROC de
+  chaque trouble sur le test externe JSIEC-1000, recalculée ici pour les deux modèles sur les
+  mêmes images (la validation croisée ne compare pas des modèles entraînés sur des jeux
+  différents). Petite tolérance pour le bruit d'entraînement.
 Code de sortie : 0 si publié, 2 si refusé, 1 en cas d'erreur.
 """
 
@@ -31,12 +33,36 @@ FICHIERS = {
     "resultats/troubles/resultats.json": "troubles_resultats.json",
 }
 TOLERANCE_DICE, TOLERANCE_AUROC, AUROC_MIN = 0.01, 0.02, 0.75
+INDEX_EXTERNE = RACINE / "data" / "troubles" / "index.csv"
+
+
+def auroc_externe(dossier: Path) -> dict[str, float]:
+    """AUROC par trouble du modèle d'un dossier du registre sur le test externe JSIEC."""
+    sortie = dossier / "externe.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(RACINE / "scripts" / "evaluer_externe.py"),
+            "--modele",
+            str(dossier / "troubles.onnx"),
+            "--calibrage",
+            str(dossier / "troubles.json"),
+            "--index",
+            str(INDEX_EXTERNE),
+            "--sortie",
+            str(sortie),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    resultat = json.loads(sortie.read_text())
+    sortie.unlink()
+    return {f"auroc_externe_{c}": r["auroc"] for c, r in resultat.items() if "auroc" in r}
 
 
 def indicateurs(dossier: Path) -> dict[str, float]:
     metriques = json.loads((dossier / "metriques.json").read_text())
-    troubles = json.loads((dossier / "troubles_resultats.json").read_text())["troubles"]
-    return {"dice_unet": metriques["unet"]["dice"], **{f"auroc_{c}": t["auroc"] for c, t in troubles.items()}}
+    return {"dice_unet": metriques["unet"]["dice"], **auroc_externe(dossier)}
 
 
 def main() -> int:
@@ -50,6 +76,8 @@ def main() -> int:
     args = parser.parse_args()
 
     manquants = [f for f in FICHIERS if not (RACINE / f).exists()]
+    if not INDEX_EXTERNE.exists():
+        manquants.append(f"{INDEX_EXTERNE} (python -m vaisseaux.sources_troubles)")
     if manquants:
         print(f"fichiers absents : {', '.join(manquants)}", file=sys.stderr)
         return 1
@@ -83,14 +111,20 @@ def main() -> int:
             json.dumps({"version": args.version, "commit": commit, "unet": mesure["unet"]}, indent=1)
         )
         challenger = indicateurs(dossier)
-        faibles = [k for k, v in challenger.items() if k.startswith("auroc_") and v < AUROC_MIN]
+        interne = json.loads((dossier / "troubles_resultats.json").read_text())["troubles"]
+        faibles = [c for c, r in interne.items() if r["auroc"] < AUROC_MIN]
         if faibles:
             print(f"AUROC sous {AUROC_MIN} : {faibles}", file=sys.stderr)
             return 2
 
         # 2. comparaison avec le champion
         try:
-            champion = indicateurs(Path(snapshot_download(args.repo, repo_type="model", token=api.token)))
+            depot = Path(snapshot_download(args.repo, repo_type="model", token=api.token))
+            with tempfile.TemporaryDirectory() as tmp_champion:  # hors du dossier publié
+                copie = Path(tmp_champion)
+                for fichier in ("metriques.json", "troubles.onnx", "troubles.json"):
+                    (copie / fichier).write_bytes((depot / fichier).read_bytes())
+                champion = indicateurs(copie)
         except (RepositoryNotFoundError, RevisionNotFoundError, FileNotFoundError):
             champion = None
         lignes, accepte = [], True
@@ -111,10 +145,19 @@ def main() -> int:
             return 2
 
         # 3. publication et étiquette de version
-        troubles = json.loads((dossier / "troubles_resultats.json").read_text())["troubles"]
+        resultats = json.loads((dossier / "troubles_resultats.json").read_text())
+        externe = resultats.get("externe_jsiec", {})
         tableau = "\n".join(
-            f"| {t['nom']} | {t['auroc']:.2f} [{t['ic_bas']:.2f} ; {t['ic_haut']:.2f}] |" for t in troubles.values()
+            f"| {t['nom']} | {t['auroc']:.2f} [{t['ic_bas']:.2f} ; {t['ic_haut']:.2f}] | "
+            + (
+                f"{externe[c]['auroc']:.2f} [{externe[c]['ic_bas']:.2f} ; {externe[c]['ic_haut']:.2f}]"
+                if "auroc" in externe.get(c, {})
+                else "—"
+            )
+            + " |"
+            for c, t in resultats["troubles"].items()
         )
+        sources = ", ".join(f"{s} ({n})" for s, n in resultats.get("effectifs", {}).get("par_source", {}).items())
         (dossier / "README.md").write_text(f"""---
 license: mit
 library_name: onnx
@@ -128,10 +171,11 @@ Modèles de la démo [retina-vessel-tracing](https://huggingface.co/spaces/sheen
 
 - `unet_drive.onnx` : U-Net de segmentation des vaisseaux, entraîné sur DRIVE. Dice {mesure["unet"]["dice"]:.3f}, AUC {mesure["unet"]["auc"]:.3f}
   sur les 20 images de test (recalculés indépendamment avant publication).
-- `troubles.onnx` : EfficientNet-B0, 6 troubles de l'œil, entraîné sur ODIR-5K ; sorties calibrées par `troubles.json`.
+- `troubles.onnx` : {resultats.get("architecture", "efficientnet_b0").split(".")[0]}, 6 troubles de l'œil, entraîné sur {sources or "ODIR-5K"} ;
+  sorties calibrées par `troubles.json`. Test externe : JSIEC-1000, un hôpital jamais vu à l'entraînement.
 
-| Trouble | AUROC hors pli [IC 95 %] |
-|---|---|
+| Trouble | AUROC validation croisée [IC 95 %] | AUROC test externe JSIEC [IC 95 %] |
+|---|---|---|
 {tableau}
 
 Démonstration de recherche, pas un dispositif médical.

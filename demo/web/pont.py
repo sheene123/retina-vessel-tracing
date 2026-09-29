@@ -13,7 +13,7 @@ from PIL import Image
 
 from vaisseaux.benchmark import CONFIGURATIONS
 from vaisseaux.biomarqueurs import MARQUEURS, mesurer
-from vaisseaux.donnees import carre_fond_oeil, entree_imagenet, localiser_fond_oeil
+from vaisseaux.donnees import carre_fond_oeil, entree_imagenet, isoler_fond_oeil
 from vaisseaux.evaluation import auc_roc, evaluer_trace, metriques_binaires, reference_entre
 from vaisseaux.graphe import carte_de_cout, plus_court_chemin
 from vaisseaux.pretraitement import normaliser_pour_reseau, pretraiter
@@ -57,12 +57,18 @@ def charger_image(octets, octets_verite=None) -> str:
     avec la taille, la présence d'une vérité terrain et ce qui a été fait."""
     image = np.asarray(_ouvrir(octets).convert("RGB"))
     hauteur_origine, largeur_origine = image.shape[:2]
-    trouve = localiser_fond_oeil(image)
-    if trouve is None:
+    image, oeil, cadre = isoler_fond_oeil(image)
+    if cadre is None:
+        couleur = np.abs(image.astype(np.int16) - image.mean(axis=-1, keepdims=True)).mean()
+        if couleur < 6:  # canaux quasi identiques : angiographie, photo en noir et blanc
+            return json.dumps(
+                {
+                    "erreur": "cette image est en noir et blanc (angiographie ou photo désaturée) : "
+                    "l'outil attend une photo couleur du fond d'œil"
+                }
+            )
         return json.dumps({"erreur": "aucun fond d'œil détecté dans cette image"})
-    (haut, bas, gauche, droite), oeil = trouve
-    image = image[haut:bas, gauche:droite].copy()
-    image[~oeil] = 0
+    haut, bas, gauche, droite = cadre
     recadre = (bas - haut) * (droite - gauche) < 0.9 * hauteur_origine * largeur_origine
     verite = None
     if octets_verite is not None:

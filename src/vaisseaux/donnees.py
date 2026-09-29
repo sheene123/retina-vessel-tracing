@@ -86,6 +86,24 @@ def carre_fond_oeil(rgb: np.ndarray, taille: int = 384) -> np.ndarray:
     return np.asarray(Image.fromarray(carre).resize((taille, taille), Image.Resampling.BILINEAR))
 
 
+def isoler_fond_oeil(rgb: np.ndarray) -> tuple[np.ndarray, np.ndarray | None, tuple[int, int, int, int] | None]:
+    """Recadre sur le fond d'œil trouvé par `localiser_fond_oeil` et met en noir tout le reste.
+    Renvoie l'image, le masque de l'œil et le cadre, ou l'image intacte si rien n'est trouvé."""
+    trouve = localiser_fond_oeil(rgb)
+    if trouve is None:
+        return rgb, None, None
+    (haut, bas, gauche, droite), oeil = trouve
+    image = rgb[haut:bas, gauche:droite, :3].copy()
+    image[~oeil] = 0
+    return image, oeil, (haut, bas, gauche, droite)
+
+
+def preparer_fond_oeil(rgb: np.ndarray, taille: int = 384) -> np.ndarray:
+    """Chaîne complète appliquée avant le réseau des troubles, identique à l'entraînement et dans
+    la démo : isolement de l'œil puis carré noir centré."""
+    return carre_fond_oeil(isoler_fond_oeil(rgb[..., :3])[0], taille)
+
+
 def entree_imagenet(carre: np.ndarray) -> np.ndarray:
     """(taille, taille, 3) uint8 -> (3, taille, taille) float32 normalisé."""
     return ((carre.astype(np.float32) / 255.0 - MOYENNE_IMAGENET) / ECART_IMAGENET).transpose(2, 0, 1).copy()

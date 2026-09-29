@@ -21,7 +21,7 @@ import numpy as np
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE / "src"))
 
-from vaisseaux.donnees import carre_fond_oeil, charger, entree_imagenet, lister  # noqa: E402
+from vaisseaux.donnees import charger, entree_imagenet, lister, preparer_fond_oeil  # noqa: E402
 from vaisseaux.evaluation import auc_roc, metriques_binaires  # noqa: E402
 from vaisseaux.pretraitement import normaliser_pour_reseau  # noqa: E402
 
@@ -50,7 +50,7 @@ def valider_troubles(chemin: Path, configuration: dict, drive: Path) -> dict:
     ordre = configuration["ordre"]
     probabilites = []
     for ident in lister(drive, "test")[:3]:
-        x = entree_imagenet(carre_fond_oeil(charger(drive, "test", ident).rgb))[None]
+        x = entree_imagenet(preparer_fond_oeil(charger(drive, "test", ident).rgb))[None]
         z = session.run(None, {"image": x})[0][0]
         if z.shape != (len(ordre),) or not np.all(np.isfinite(z)):
             raise ValueError(f"sortie invalide du modèle des troubles : {z.shape}")

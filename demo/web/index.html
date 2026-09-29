@@ -204,7 +204,7 @@
 
     <section class="carte" id="panneauTroubles" aria-labelledby="titreTroubles">
       <h2 id="titreTroubles">Signes de maladies de l'œil</h2>
-      <p class="aide" style="margin-top:0">Un réseau de neurones, entraîné sur 6 392 yeux de la base publique ODIR-5K, cherche
+      <p class="aide" style="margin-top:0">Un réseau de neurones, entraîné sur <span id="origineTroubles">6 392 yeux de la base publique ODIR-5K</span>, cherche
         sur l'image les signes de six maladies : rétinopathie diabétique, glaucome, cataracte, DMLA, rétinopathie
         hypertensive et myopie forte.</p>
       <button type="button" id="analyser" class="principal" disabled>Analyser l'image</button>
@@ -215,7 +215,8 @@
       </details>
       <p class="aide avertissement">Démonstration de recherche, pas un diagnostic : seul un ophtalmologiste peut
         diagnostiquer une maladie. Le réseau ne voit qu'une photo, sans l'âge ni les antécédents du patient, et ses
-        pourcentages valent pour une population comme celle d'ODIR (patients consultant en ophtalmologie).</p>
+        pourcentages valent pour une population comme celle des bases d'entraînement (patients consultant en
+        ophtalmologie).</p>
     </section>
 
     <section class="carte" id="panneauMesures" aria-labelledby="titreMesures">
@@ -830,6 +831,7 @@ async function analyserTroubles() {
     if (!sessionTroubles) {
       preparerOrt();
       configTroubles = await (await fetch("troubles.json")).json();
+      if (configTroubles.origine) $("origineTroubles").textContent = configTroubles.origine;
       sessionTroubles = await ort.InferenceSession.create("troubles.onnx");
     }
     const octets = appeler("entree_troubles");
@@ -870,21 +872,24 @@ function afficherTroubles(resultats) {
       <span class="titre">${echapper(r.nom)}</span>
       <span class="niveau ${classeNiveau}">${mot} · ${pourcentage} %</span>
       <div class="jauge" role="img" aria-label="${echapper(r.nom)} : ${pourcentage} %"><span class="${classeNiveau}" style="width:${Math.max(2, pourcentage)}%"></span></div>
-      <span class="desc">${echapper(DESCRIPTIONS_TROUBLES[r.cle] || "")} · ${qualiteDetection(r.auroc)}</span>
+      <span class="desc">${echapper(DESCRIPTIONS_TROUBLES[r.cle] || "")} · ${qualiteDetection(r.auroc_externe ?? r.auroc)}</span>
     </div>`;
   }
   $("resultatTroubles").innerHTML = html;
+  const externe = configTroubles.ordre.some((cle) => configTroubles.troubles[cle].auroc_externe != null);
   let explication = `<p class="aide">Chaque pourcentage est une probabilité calibrée : sur des yeux d'une population comme celle
-    d'ODIR, « 70 % » correspond à environ 7 yeux atteints sur 10. En dessous de 20 % : peu probable ; de 20 à 50 % :
+    des bases d'entraînement, « 70 % » correspond à environ 7 yeux atteints sur 10. En dessous de 20 % : peu probable ; de 20 à 50 % :
     possible ; au-dessus de 50 % : probable.</p><div class="tableau"><table><thead><tr><th>Maladie</th>
-    <th>Qualité de détection (AUROC)</th><th>Atteints parmi les yeux jugés « probable »</th><th>Atteints repérés dès « possible »</th></tr></thead><tbody>`;
+    <th>Qualité de détection (AUROC)</th>${externe ? "<th>Sur un hôpital jamais vu (AUROC)</th>" : ""}<th>Atteints parmi les yeux jugés « probable »</th><th>Atteints repérés dès « possible »</th></tr></thead><tbody>`;
   for (const cle of configTroubles.ordre) {
     const t = configTroubles.troubles[cle], p = t.niveaux.probable;
-    explication += `<tr><td>${echapper(t.nom.split(" (")[0])}</td><td>${fr(t.auroc, 2)} (${qualiteDetection(t.auroc)})</td>
+    const colonneExterne = !externe ? "" : `<td>${t.auroc_externe == null ? "non testé" : `${fr(t.auroc_externe, 2)} (${qualiteDetection(t.auroc_externe)})`}</td>`;
+    explication += `<tr><td>${echapper(t.nom.split(" (")[0])}</td><td>${fr(t.auroc, 2)} (${qualiteDetection(t.auroc)})</td>${colonneExterne}
       <td>${p.part_atteints == null ? "n/d" : `${Math.round(100 * p.part_atteints)} %`}</td><td>${Math.round(100 * t.detectes_des_possible)} %</td></tr>`;
   }
   explication += `</tbody></table></div><p class="aide">Mesures faites sur des yeux que le réseau n'avait jamais vus (validation
-    croisée par patient). L'AUROC vaut 1 pour une détection parfaite et 0,5 pour le hasard.
+    croisée par patient)${externe ? ", puis sur 1 000 photos d'un autre hôpital (JSIEC, Chine), jamais utilisées pour l'entraînement" : ""}.
+    L'AUROC vaut 1 pour une détection parfaite et 0,5 pour le hasard.
     <a href="https://github.com/sheene123/retina-vessel-tracing/blob/main/docs/troubles.md">Détails de l'évaluation</a>.</p>`;
   $("explicationTroubles").innerHTML = explication;
   $("lectureTroubles").hidden = false;
