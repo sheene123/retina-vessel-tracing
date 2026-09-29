@@ -83,7 +83,10 @@ def main() -> int:
     unet = valider_unet(dossier / "unet_drive.onnx", args.drive)
     resultat = {"unet": unet}
     if (dossier / "troubles.onnx").exists():
-        configuration = json.loads((dossier / "troubles.json").read_text())
+        chemin_configuration = dossier / "troubles.json"
+        if not chemin_configuration.exists() and dossier.resolve() == (RACINE / "modeles").resolve():
+            chemin_configuration = RACINE / "resultats" / "troubles" / "troubles_demo.json"
+        configuration = json.loads(chemin_configuration.read_text())
         resultat["troubles"] = valider_troubles(dossier / "troubles.onnx", configuration, args.drive)
     annonces = dossier / "metriques.json"
     if annonces.exists():  # le registre annonce des métriques : elles doivent être retrouvées
