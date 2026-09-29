@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -208,7 +209,8 @@ def entrainer(
     import torch
 
     appareil = "cuda" if torch.cuda.is_available() else "cpu"
-    modele = _modele(architecture).to(appareil)
+    # format mémoire « channels_last » : +50 % d'images par seconde sur GPU récent en bf16
+    modele = _modele(architecture).to(appareil, memory_format=torch.channels_last)
     y = lignes[CLES].to_numpy()
     positifs, negatifs = (y == 1).sum(0), (y == 0).sum(0)
     poids_positifs = torch.tensor(
@@ -222,7 +224,8 @@ def entrainer(
         if progression is not None:
             progression.set_description(f"{etape} · époque {epoque + 1}/{epoques}")
         for n, (x, cible) in enumerate(charge):
-            x, cible = x.to(appareil, non_blocking=True), cible.to(appareil, non_blocking=True)
+            x = x.to(appareil, non_blocking=True, memory_format=torch.channels_last)
+            cible = cible.to(appareil, non_blocking=True)
             with torch.autocast(appareil, dtype=torch.bfloat16, enabled=appareil == "cuda"):
                 logits = modele(x)
             connu = cible >= 0  # trouble non étiqueté par ce jeu, ou incertain : ignoré
@@ -248,7 +251,7 @@ def logits(modele, lignes: pd.DataFrame) -> np.ndarray:
     sorties = []
     with torch.no_grad():
         for x, _ in _chargeur(lignes, entrainement=False):
-            sorties.append(modele(x.to(appareil)).float().cpu().numpy())
+            sorties.append(modele(x.to(appareil, memory_format=torch.channels_last)).float().cpu().numpy())
     return np.concatenate(sorties)
 
 
@@ -339,7 +342,7 @@ def exporter(modele, chemin: Path, exemples: np.ndarray) -> float:
     import onnxruntime as ort
     import torch
 
-    modele = modele.float().cpu().eval()
+    modele = modele.float().cpu().to(memory_format=torch.contiguous_format).eval()
     x = torch.from_numpy(exemples)
     torch.onnx.export(
         modele,
@@ -408,6 +411,22 @@ def _auroc(y: np.ndarray, z: np.ndarray) -> float:
     return float(roc_auc_score(y[ok], z[ok])) if 0 < (y[ok] == 1).sum() < ok.sum() else float("nan")
 
 
+def _verrouiller(chemin: Path):
+    """Verrou exclusif : deux entraînements simultanés saturent la mémoire et le GPU. Le verrou est
+    libéré automatiquement à la fin du processus, même en cas d'arrêt brutal."""
+    import fcntl
+
+    fichier = open(chemin, "w")  # noqa: SIM115 (gardé ouvert pendant tout l'entraînement)
+    try:
+        fcntl.flock(fichier, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fichier.close()
+        return None
+    fichier.write(str(os.getpid()))
+    fichier.flush()
+    return fichier
+
+
 def main(argv: list[str] | None = None) -> int:
     import torch
 
@@ -419,9 +438,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--epoques", type=int, default=12)
     parser.add_argument("--images-par-epoque", type=int, default=12000)
     args = parser.parse_args(argv)
+    args.modele.parent.mkdir(parents=True, exist_ok=True)
+    verrou = _verrouiller(args.modele.parent / ".entrainement_troubles.verrou")
+    if verrou is None:
+        print("un entraînement tourne déjà (voir : pgrep -af vaisseaux.troubles) : arrêt", file=sys.stderr)
+        return 1
     debut = time.perf_counter()
     args.sortie.mkdir(parents=True, exist_ok=True)
-    args.modele.parent.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(GRAINE)
 
     index = pd.read_csv(args.index, low_memory=False)
