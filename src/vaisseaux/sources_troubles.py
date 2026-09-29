@@ -10,8 +10,11 @@ Entraînement (étiquettes partielles : -1 = inconnu pour ce jeu, ignoré par la
 - sjchoi86 « retina_dataset » : normal, cataracte, glaucome.
 
 Test externe, jamais utilisé pour entraîner ni régler : JSIEC-1000 (39 catégories, un autre
-hôpital). Les images d'entraînement quasi identiques à une image JSIEC (empreinte perceptuelle)
-sont retirées, et les doublons entre jeux d'entraînement partagent un même groupe pour la
+hôpital). Doublons : l'empreinte perceptuelle (phash) ne fait que proposer des paires, car tous
+les fonds d'œil se ressemblent en gros (disque orangé, papille) ; une paire n'est retenue que si le
+dessin fin des vaisseaux (canal vert passe-haut, dans le champ de vue) est corrélé à plus de 0,5,
+alors que deux yeux différents ne dépassent pas 0,45. Les images d'entraînement en double d'une
+image JSIEC sont retirées ; les doublons entre images d'entraînement partagent un groupe pour la
 validation croisée.
 
 Chaque image passe par `preparer_fond_oeil`, la même chaîne que dans la démo, et est mise en
@@ -27,7 +30,7 @@ import glob
 import hashlib
 import io
 import os
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
 
 import numpy as np
@@ -44,7 +47,9 @@ JSIEC = KAGGLE / "linchundan/fundusimage1000/versions/4/1000images"
 SJCHOI = KAGGLE / "jr2ngb/cataractdataset/versions/2/dataset"
 SMDG = "bumbledeep/smdg-full-dataset"
 COTE_CACHE = 448
-DISTANCE_DOUBLON = 6  # bits différents sur 64 (empreinte perceptuelle)
+DISTANCE_CANDIDATS = 8  # bits différents sur 64 (empreinte perceptuelle) : paires à vérifier
+CORRELATION_DOUBLON = 0.5  # corrélation des détails vasculaires au-delà de laquelle c'est le même œil
+COTE_DETAILS = 128
 INCONNU = dict.fromkeys(CLES, -1)
 
 
@@ -174,9 +179,23 @@ def _jsiec() -> list[dict]:
 # ------------------------------------------------------------------ préparation des images
 
 
-def _preparer(tache: tuple[str, str]) -> tuple[str, str | None]:
+def _signature(chemin: str) -> tuple[str, bytes]:
+    """Empreinte perceptuelle (hexadécimal) et détails vasculaires normalisés (float16)."""
     import imagehash
+    from scipy import ndimage as ndi
 
+    image = Image.open(chemin)
+    rgb = np.asarray(image.resize((COTE_DETAILS, COTE_DETAILS), Image.Resampling.BILINEAR), np.float32)
+    champ = ndi.binary_erosion(rgb[..., 0] > 20, iterations=10)  # sans le bord du disque, commun à tous
+    vert = rgb[..., 1] - ndi.gaussian_filter(rgb[..., 1], 3)
+    details = np.zeros(COTE_DETAILS * COTE_DETAILS, np.float32)
+    if champ.sum() > 500 and vert[champ].std() >= 1.0:  # sinon image sans détail : jamais un doublon
+        d = np.where(champ, (vert - vert[champ].mean()) / vert[champ].std(), 0)
+        details = (d / np.sqrt((d**2).mean())).ravel()
+    return str(imagehash.phash(image)), details.astype(np.float16).tobytes()
+
+
+def _preparer(tache: tuple[str, str]) -> tuple[str, tuple[str, bytes] | None]:
     origine, cible = tache
     try:
         if not Path(cible).exists():
@@ -185,34 +204,24 @@ def _preparer(tache: tuple[str, str]) -> tuple[str, str | None]:
             carre = preparer_fond_oeil(np.asarray(image), COTE_CACHE)
             Path(cible).parent.mkdir(parents=True, exist_ok=True)
             Image.fromarray(carre).save(cible, quality=95)
-        return cible, str(imagehash.phash(Image.open(cible)))
+        return cible, _signature(cible)
     except Exception as erreur:  # image illisible : écartée, mais signalée
         print(f"illisible : {origine} ({erreur})", flush=True)
         return cible, None
 
 
-def _preparer_parquet(tache: tuple[str, list[tuple[int, str]]]) -> list[tuple[str, str | None]]:
-    """Les images SMDG sont groupées par fichier Parquet : on lit chaque fichier une seule fois."""
-    import imagehash
-    import pyarrow.parquet as pq
-
-    fichier, elements = tache
-    colonne = None
-    resultats = []
-    for i, cible in elements:
-        try:
-            if not Path(cible).exists():
-                if colonne is None:
-                    colonne = pq.read_table(fichier, columns=["image"]).column("image")
-                image = Image.open(io.BytesIO(colonne[i].as_py()["bytes"])).convert("RGB")
-                image.thumbnail((1600, 1600))
-                Path(cible).parent.mkdir(parents=True, exist_ok=True)
-                Image.fromarray(preparer_fond_oeil(np.asarray(image), COTE_CACHE)).save(cible, quality=95)
-            resultats.append((cible, str(imagehash.phash(Image.open(cible)))))
-        except Exception as erreur:
-            print(f"illisible : {fichier}#{i} ({erreur})", flush=True)
-            resultats.append((cible, None))
-    return resultats
+def _preparer_octets(octets: bytes | None, cible: str) -> tuple[str, tuple[str, bytes] | None]:
+    """Image SMDG lue du Parquet par le processus principal (None : déjà en cache)."""
+    try:
+        if octets is not None:
+            image = Image.open(io.BytesIO(octets)).convert("RGB")
+            image.thumbnail((1600, 1600))
+            Path(cible).parent.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(preparer_fond_oeil(np.asarray(image), COTE_CACHE)).save(cible, quality=95)
+        return cible, _signature(cible)
+    except Exception as erreur:
+        print(f"illisible : {cible} ({erreur})", flush=True)
+        return cible, None
 
 
 def _distances(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -230,11 +239,12 @@ def construire_index(sortie: Path, processus: int) -> pd.DataFrame:
     ]
     simples = df[df["rang"] < 0]
     par_fichier: dict[str, list[tuple[int, str]]] = {}
-    for fichier, i, cible in df[df["rang"] >= 0][["origine", "rang", "chemin"]].itertuples(index=False):
+    parquets = df[df["rang"] >= 0]
+    for fichier, i, cible in parquets[["origine", "rang", "chemin"]].itertuples(index=False):
         par_fichier.setdefault(fichier, []).append((int(i), cible))
     # empreintes gardées en hexadécimal : un passage par float64 (pandas, valeurs manquantes)
     # tronquerait ces entiers de 64 bits
-    empreintes: dict[str, str | None] = {}
+    empreintes: dict[str, tuple[str, bytes] | None] = {}
     with ProcessPoolExecutor(processus) as ex:
         for k, (cible, h) in enumerate(
             ex.map(_preparer, zip(simples["origine"], simples["chemin"], strict=True), chunksize=16)
@@ -242,22 +252,59 @@ def construire_index(sortie: Path, processus: int) -> pd.DataFrame:
             empreintes[cible] = h
             if k % 2000 == 0:
                 print(f"{k}/{len(simples)} images préparées", flush=True)
-        for resultats in ex.map(_preparer_parquet, par_fichier.items()):
-            empreintes.update(resultats)
-    df["empreinte"] = df["chemin"].map(empreintes)
-    df = df[df["empreinte"].notna()].reset_index(drop=True)
-    h = np.array([int(e, 16) for e in df["empreinte"]], dtype=np.uint64)
+        # SMDG : lecture en continu par petits lots (un fichier Parquet entier ne tient pas en
+        # mémoire dans chaque processus), avec un nombre borné d'images en attente
+        import pyarrow.parquet as pq
 
-    # 1. retirer de l'entraînement tout quasi-doublon d'une image du test externe
-    test = (df["source"] == "jsiec").to_numpy()
-    fuite = (_distances(h[~test], h[test]) <= DISTANCE_DOUBLON).any(axis=1)
+        en_cours: set = set()
+        faites = 0
+        for fichier, elements in par_fichier.items():
+            cibles = dict(elements)
+            rang = 0
+            for lot in pq.ParquetFile(fichier).iter_batches(batch_size=16, columns=["image"]):
+                for image in lot.column("image").to_pylist():
+                    cible = cibles.get(rang)
+                    rang += 1
+                    if cible is None:
+                        continue
+                    octets = None if Path(cible).exists() else image["bytes"]
+                    en_cours.add(ex.submit(_preparer_octets, octets, cible))
+                    if len(en_cours) >= 3 * processus:
+                        finies, en_cours = wait(en_cours, return_when=FIRST_COMPLETED)
+                        for f in finies:
+                            empreintes.__setitem__(*f.result())
+                            faites += 1
+                            if faites % 1000 == 0:
+                                print(f"SMDG : {faites}/{len(parquets)} images préparées", flush=True)
+        for f in wait(en_cours).done:
+            empreintes.__setitem__(*f.result())
+    df = df[df["chemin"].map(lambda c: empreintes.get(c) is not None)].reset_index(drop=True)
+    h = np.array([int(empreintes[c][0], 16) for c in df["chemin"]], dtype=np.uint64)
+    details = np.stack([np.frombuffer(empreintes[c][1], np.float16) for c in df["chemin"]])
+    empreintes.clear()  # libère la mémoire
+
+    # paires candidates (empreinte proche) puis confirmation par les détails vasculaires
+    premiers, seconds = [], []
+    for debut in range(0, len(df), 2000):
+        bloc = np.arange(debut, min(debut + 2000, len(df)))
+        a, b = np.nonzero(_distances(h[bloc], h) <= DISTANCE_CANDIDATS)
+        garde = bloc[a] < b
+        for k0 in range(0, int(garde.sum()), 5000):
+            i, j = bloc[a][garde][k0 : k0 + 5000], b[garde][k0 : k0 + 5000]
+            correlation = (details[i].astype(np.float32) * details[j].astype(np.float32)).mean(axis=1)
+            premiers.append(i[correlation > CORRELATION_DOUBLON])
+            seconds.append(j[correlation > CORRELATION_DOUBLON])
+    premiers, seconds = np.concatenate(premiers), np.concatenate(seconds)
+    source = df["source"].to_numpy()
+
+    # 1. retirer de l'entraînement tout doublon d'une image du test externe
+    externe = source == "jsiec"
+    fuite = np.zeros(len(df), bool)
+    fuite[premiers[externe[seconds] & ~externe[premiers]]] = True
+    fuite[seconds[externe[premiers] & ~externe[seconds]]] = True
     print(f"doublons du test externe retirés de l'entraînement : {int(fuite.sum())}")
-    garde = np.ones(len(df), bool)
-    garde[np.flatnonzero(~test)[fuite]] = False
-    df, h = df[garde].reset_index(drop=True), h[garde]
 
-    # 2. les doublons entre jeux d'entraînement partagent un groupe (même pli de validation)
-    entrainement = np.flatnonzero((df["source"] != "jsiec").to_numpy())
+    # 2. les doublons entre images d'entraînement partagent un groupe (même pli de validation)
     parent = np.arange(len(df))
 
     def racine(i: int) -> int:
@@ -266,18 +313,15 @@ def construire_index(sortie: Path, processus: int) -> pd.DataFrame:
             i = parent[i]
         return i
 
-    paires = 0
-    for debut in range(0, len(entrainement), 2000):
-        bloc = entrainement[debut : debut + 2000]
-        proches = _distances(h[bloc], h[entrainement]) <= DISTANCE_DOUBLON
-        for a, b in zip(*np.nonzero(proches), strict=True):
-            i, j = bloc[a], entrainement[b]
-            if i < j and racine(i) != racine(j):
-                parent[racine(i)] = racine(j)
-                paires += 1
+    fusions = 0
+    for i, j in zip(premiers, seconds, strict=True):
+        if not (externe[i] or externe[j] or fuite[i] or fuite[j]) and racine(i) != racine(j):
+            parent[racine(i)] = racine(j)
+            fusions += 1
     df["groupe"] = [df["groupe"].iat[racine(i)] for i in range(len(df))]
-    print(f"doublons fusionnés entre jeux d'entraînement : {paires}")
-    df = df.drop(columns=["empreinte"])
+    taille = df.loc[~externe].groupby("groupe").size()
+    print(f"doublons fusionnés entre images d'entraînement : {fusions} (plus grand groupe : {taille.max()} images)")
+    df = df[~fuite].reset_index(drop=True)
     df.to_csv(sortie / "index.csv", index=False)
     return df
 
@@ -285,7 +329,8 @@ def construire_index(sortie: Path, processus: int) -> pd.DataFrame:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--sortie", type=Path, default=Path("data/troubles"))
-    parser.add_argument("--processus", type=int, default=min(12, os.cpu_count() or 4))
+    # chaque processus garde numpy, scikit-image et une image en mémoire : 6 tient dans ~8 Go (WSL)
+    parser.add_argument("--processus", type=int, default=min(6, os.cpu_count() or 4))
     args = parser.parse_args(argv)
     args.sortie.mkdir(parents=True, exist_ok=True)
     df = construire_index(args.sortie, args.processus)

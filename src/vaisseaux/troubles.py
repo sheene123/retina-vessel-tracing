@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from PIL import Image
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedGroupKFold
+from tqdm import tqdm
 
 # clé -> (nom affiché, mots-clés positifs, mots-clés incertains)
 TROUBLES = {
@@ -194,7 +196,15 @@ def _chargeur(lignes: pd.DataFrame, entrainement: bool, images_par_epoque: int |
     )
 
 
-def entrainer(lignes: pd.DataFrame, epoques: int, images_par_epoque: int, architecture: str = ARCHITECTURE):
+def entrainer(
+    lignes: pd.DataFrame,
+    epoques: int,
+    images_par_epoque: int,
+    architecture: str = ARCHITECTURE,
+    progression=None,
+    etape: str = "",
+):
+    """`progression` : barre tqdm partagée par tous les entraînements, avancée à chaque lot."""
     import torch
 
     appareil = "cuda" if torch.cuda.is_available() else "cpu"
@@ -207,9 +217,11 @@ def entrainer(lignes: pd.DataFrame, epoques: int, images_par_epoque: int, archit
     charge = _chargeur(lignes, entrainement=True, images_par_epoque=images_par_epoque)
     optimiseur = torch.optim.AdamW(modele.parameters(), lr=3e-4, weight_decay=1e-4)
     planning = torch.optim.lr_scheduler.OneCycleLR(optimiseur, max_lr=3e-4, total_steps=epoques * len(charge))
-    for _epoque in range(epoques):
+    for epoque in range(epoques):
         modele.train()
-        for x, cible in charge:
+        if progression is not None:
+            progression.set_description(f"{etape} · époque {epoque + 1}/{epoques}")
+        for n, (x, cible) in enumerate(charge):
             x, cible = x.to(appareil, non_blocking=True), cible.to(appareil, non_blocking=True)
             with torch.autocast(appareil, dtype=torch.bfloat16, enabled=appareil == "cuda"):
                 logits = modele(x)
@@ -222,6 +234,10 @@ def entrainer(lignes: pd.DataFrame, epoques: int, images_par_epoque: int, archit
             perte.backward()
             optimiseur.step()
             planning.step()
+            if progression is not None:
+                progression.update(1)
+                if n % 50 == 0:
+                    progression.set_postfix_str(f"perte {perte.item():.3f}", refresh=False)
     return modele.eval()
 
 
@@ -418,16 +434,31 @@ def main(argv: list[str] | None = None) -> int:
         + ", ".join(f"{c} {int((jeu[c] == 1).sum())}" for c in CLES),
         flush=True,
     )
+    # une seule barre pour les 5 plis et le modèle final, avec le temps restant estimé
+    progression = tqdm(
+        total=(PLIS + 1) * args.epoques * (args.images_par_epoque // 32),
+        unit="lot",
+        mininterval=10,
+        ncols=150,
+        file=sys.stdout,
+        bar_format="{desc} {percentage:3.0f}% |{bar:30}| {elapsed} écoulé, reste ~{remaining} {postfix}",
+    )
     z = np.zeros((len(jeu), len(CLES)), dtype=np.float32)
     for k in range(PLIS):
         dans = jeu["pli"].to_numpy() == k
-        modele = entrainer(jeu[~dans], args.epoques, args.images_par_epoque, args.architecture)
+        modele = entrainer(
+            jeu[~dans],
+            args.epoques,
+            args.images_par_epoque,
+            args.architecture,
+            progression,
+            f"validation croisée, pli {k + 1}/{PLIS}",
+        )
         z[dans] = logits(modele, jeu[dans])
         test = jeu[dans]
-        print(
-            f"pli {k + 1}/{PLIS} : "
-            + ", ".join(f"{c} {_auroc(test[c].to_numpy(), z[dans, j]):.2f}" for j, c in enumerate(CLES)),
-            flush=True,
+        progression.write(
+            f"pli {k + 1}/{PLIS} terminé, AUROC : "
+            + ", ".join(f"{c} {_auroc(test[c].to_numpy(), z[dans, j]):.2f}" for j, c in enumerate(CLES))
         )
 
     calibrage = {c: calibrer(z[:, j], jeu[c].to_numpy()) for j, c in enumerate(CLES)}
@@ -436,7 +467,11 @@ def main(argv: list[str] | None = None) -> int:
         s: {c: _auroc(jeu.loc[jeu["source"] == s, c].to_numpy(), z[jeu["source"] == s, j]) for j, c in enumerate(CLES)}
         for s in jeu["source"].unique()
     }
-    final = entrainer(jeu, args.epoques, args.images_par_epoque, args.architecture)
+    final = entrainer(
+        jeu, args.epoques, args.images_par_epoque, args.architecture, progression, "modèle final (toutes les images)"
+    )
+    progression.close()
+    print("évaluation sur le test externe JSIEC et export ONNX…", flush=True)
     torch.save(final.state_dict(), args.modele.with_suffix(".pt"))
     z_externe = logits(final, externe)
     externe_resultat = evaluer_externe(externe, z_externe, calibrage)
