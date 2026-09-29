@@ -322,7 +322,8 @@ def construire_index(sortie: Path, processus: int) -> pd.DataFrame:
     taille = df.loc[~externe].groupby("groupe").size()
     print(f"doublons fusionnés entre images d'entraînement : {fusions} (plus grand groupe : {taille.max()} images)")
     df = df[~fuite].reset_index(drop=True)
-    df.to_csv(sortie / "index.csv", index=False)
+    # chemins relatifs au dossier de l'index : le dossier peut être déplacé tel quel
+    df.assign(chemin=[str(Path(c).relative_to(sortie)) for c in df["chemin"]]).to_csv(sortie / "index.csv", index=False)
     return df
 
 

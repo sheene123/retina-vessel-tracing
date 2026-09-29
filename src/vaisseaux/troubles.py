@@ -92,10 +92,14 @@ def construire_jeu(odir: Path) -> pd.DataFrame:
 ARCHITECTURE = "efficientnet_b0.ra_in1k"
 
 
-def _modele(architecture: str = ARCHITECTURE):
+POIDS_INITIAUX: Path | None = None  # fichier de poids ImageNet, quand la machine n'a pas internet
+
+
+def _modele(architecture: str = ARCHITECTURE, pretrained: bool = True):
     import timm
 
-    return timm.create_model(architecture, pretrained=True, num_classes=len(CLES))
+    options = {"pretrained_cfg_overlay": {"file": str(POIDS_INITIAUX)}} if pretrained and POIDS_INITIAUX else {}
+    return timm.create_model(architecture, pretrained=pretrained, num_classes=len(CLES), **options)
 
 
 class Annotations:
@@ -191,7 +195,7 @@ def _chargeur(lignes: pd.DataFrame, entrainement: bool, images_par_epoque: int |
         Images(),
         batch_size=32 if entrainement else 64,
         sampler=echantillonneur,
-        num_workers=6,  # 8 saturerait la mémoire de WSL (7,5 Go)
+        num_workers=min(6, os.cpu_count() or 4),  # plus saturerait la mémoire de WSL (7,5 Go)
         drop_last=entrainement,
         persistent_workers=False,
     )
@@ -224,6 +228,10 @@ def entrainer(
     optimiseur = torch.optim.AdamW(modele.parameters(), lr=3e-4, weight_decay=1e-4)
     planning = torch.optim.lr_scheduler.OneCycleLR(optimiseur, max_lr=3e-4, total_steps=epoques * len(charge))
     bridage = appareil == "cuda" and part_gpu < 1
+    # bf16 sur les GPU récents (Ampere et après), sinon fp16 avec mise à l'échelle de la perte (T4)
+    bf16 = appareil == "cuda" and torch.cuda.get_device_capability()[0] >= 8
+    precision = torch.bfloat16 if bf16 else torch.float16
+    echelle = torch.amp.GradScaler("cuda", enabled=appareil == "cuda" and not bf16)
     for epoque in range(epoques):
         modele.train()
         if progression is not None:
@@ -234,7 +242,7 @@ def entrainer(
                 debut_lot = time.perf_counter()
             x = x.to(appareil, non_blocking=True, memory_format=torch.channels_last)
             cible = cible.to(appareil, non_blocking=True)
-            with torch.autocast(appareil, dtype=torch.bfloat16, enabled=appareil == "cuda"):
+            with torch.autocast(appareil, dtype=precision, enabled=appareil == "cuda"):
                 logits = modele(x)
             connu = cible >= 0  # trouble non étiqueté par ce jeu, ou incertain : ignoré
             perte = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -242,8 +250,9 @@ def entrainer(
             )
             perte = (perte * connu).sum() / connu.sum().clamp(min=1)
             optimiseur.zero_grad()
-            perte.backward()
-            optimiseur.step()
+            echelle.scale(perte).backward()
+            echelle.step(optimiseur)
+            echelle.update()
             planning.step()
             if bridage:
                 torch.cuda.synchronize()
@@ -438,6 +447,33 @@ def _verrouiller(chemin: Path):
     return fichier
 
 
+def lire_index(chemin: Path) -> pd.DataFrame:
+    """Index de `vaisseaux.sources_troubles` ; les chemins d'images y sont relatifs à son dossier,
+    ce qui permet de déplacer le tout (par exemple vers un jeu de données Kaggle)."""
+    index = pd.read_csv(chemin, low_memory=False)
+    base = Path(chemin).parent
+    index["chemin"] = [c if Path(c).is_absolute() else str(base / c) for c in index["chemin"]]
+    return index
+
+
+def exporter_depuis_poids(poids: Path, index: Path, onnx: Path, architecture: str, sortie: Path) -> float:
+    """Export ONNX à partir des poids entraînés ailleurs (Kaggle) ; parité vérifiée sur des images
+    réelles du test externe et reportée dans resultats.json."""
+    import torch
+
+    modele = _modele(architecture, pretrained=False)
+    modele.load_state_dict(torch.load(poids, map_location="cpu", weights_only=True))
+    externe = lire_index(index).query("source == 'jsiec'")
+    exemples = np.stack([transformations(False)(Image.open(c).convert("RGB")).numpy() for c in externe["chemin"][:8]])
+    ecart = exporter(modele, onnx, exemples)
+    chemin_resultats = sortie / "resultats.json"
+    if chemin_resultats.exists():
+        resultats = json.loads(chemin_resultats.read_text())
+        resultats["parite_onnx"] = ecart
+        chemin_resultats.write_text(json.dumps(resultats, indent=1, ensure_ascii=False))
+    return ecart
+
+
 def main(argv: list[str] | None = None) -> int:
     import torch
 
@@ -448,6 +484,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--architecture", default=ARCHITECTURE)
     parser.add_argument("--epoques", type=int, default=12)
     parser.add_argument("--images-par-epoque", type=int, default=12000)
+    parser.add_argument("--poids-initiaux", type=Path, help="poids ImageNet (safetensors) si pas d'accès internet")
+    parser.add_argument("--sans-onnx", action="store_true", help="n'exporte pas en ONNX (fait ensuite avec --exporter)")
+    parser.add_argument("--exporter", type=Path, metavar="POIDS.pt", help="exporte seulement ces poids en ONNX")
     parser.add_argument(
         "--gpu-max",
         type=float,
@@ -455,7 +494,13 @@ def main(argv: list[str] | None = None) -> int:
         help="part maximale du temps où le GPU calcule (0,55 = 55 %% ; 1 = sans limite)",
     )
     args = parser.parse_args(argv)
+    global POIDS_INITIAUX
+    POIDS_INITIAUX = args.poids_initiaux
     args.modele.parent.mkdir(parents=True, exist_ok=True)
+    if args.exporter:
+        ecart = exporter_depuis_poids(args.exporter, args.index, args.modele, args.architecture, args.sortie)
+        print(f"exporté : {args.modele} ; parité ONNX (images réelles) : {ecart:.2e}")
+        return 0
     verrou = _verrouiller(args.modele.parent / ".entrainement_troubles.verrou")
     if verrou is None:
         print("un entraînement tourne déjà (voir : pgrep -af vaisseaux.troubles) : arrêt", file=sys.stderr)
@@ -464,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
     args.sortie.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(GRAINE)
 
-    index = pd.read_csv(args.index, low_memory=False)
+    index = lire_index(args.index)
     jeu = index[index["source"] != "jsiec"].reset_index(drop=True)
     externe = index[index["source"] == "jsiec"].reset_index(drop=True)
     jeu["pli"] = _plis(jeu)
@@ -523,7 +568,7 @@ def main(argv: list[str] | None = None) -> int:
     z_externe = logits(final, externe)
     externe_resultat = evaluer_externe(externe, z_externe, calibrage)
     exemples = np.stack([transformations(False)(Image.open(c).convert("RGB")).numpy() for c in externe["chemin"][:8]])
-    ecart = exporter(final, args.modele, exemples)
+    ecart = None if args.sans_onnx else exporter(final, args.modele, exemples)
     resultat_complet = {
         "architecture": args.architecture,
         "troubles": resultat,
@@ -580,7 +625,8 @@ def main(argv: list[str] | None = None) -> int:
             else "—"
         )
         print(f"{c:13s}  {r['auroc']:.3f} [{r['ic_bas']:.2f} ; {r['ic_haut']:.2f}]   {texte_externe}")
-    print(f"parité ONNX (images réelles) : {ecart:.2e} ; durée {resultat_complet['duree_s']} s")
+    parite = "export ONNX à faire avec --exporter" if ecart is None else f"parité ONNX (images réelles) : {ecart:.2e}"
+    print(f"{parite} ; durée {resultat_complet['duree_s']} s")
     return 0
 
 

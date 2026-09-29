@@ -14,13 +14,12 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 from PIL import Image
 
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE / "src"))
 
-from vaisseaux.troubles import CLES, evaluer_externe, transformations  # noqa: E402
+from vaisseaux.troubles import CLES, evaluer_externe, lire_index, transformations  # noqa: E402
 
 
 def main() -> int:
@@ -42,7 +41,7 @@ def main() -> int:
 
     configuration = json.loads(args.calibrage.read_text())
     calibrage = {c: (configuration["troubles"][c]["a"], configuration["troubles"][c]["b"]) for c in CLES}
-    index = pd.read_csv(args.index, low_memory=False)
+    index = lire_index(args.index)
     externe = index[index["source"] == "jsiec"].reset_index(drop=True)
     session = ort.InferenceSession(str(args.modele), providers=["CPUExecutionProvider"])
     preparer = transformations(entrainement=False)
