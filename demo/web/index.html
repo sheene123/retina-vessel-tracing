@@ -118,6 +118,28 @@
   .badge.peu { background: color-mix(in srgb, var(--alerte) 14%, transparent); color: var(--alerte); }
   .mesures td small { display: block; color: var(--texte-2); font-size: 0.78rem; white-space: normal; max-width: 34ch; }
   .avertissement { border-left: 3px solid var(--bord); padding-left: 10px; }
+  .verdict { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; margin: 12px 0; }
+  .verdict strong { display: block; font-size: 1.05rem; }
+  .verdict.calme { background: color-mix(in srgb, var(--ok) 12%, transparent); }
+  .verdict.attention { background: color-mix(in srgb, #b7791f 14%, transparent); }
+  .verdict.alerte { background: color-mix(in srgb, var(--alerte) 12%, transparent); }
+  .verdict .pastille-ronde { flex: none; width: 14px; height: 14px; border-radius: 50%; margin-top: 5px; }
+  .verdict.calme .pastille-ronde { background: var(--ok); }
+  .verdict.attention .pastille-ronde { background: #b7791f; }
+  .verdict.alerte .pastille-ronde { background: var(--alerte); }
+  .trouble { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--bord); }
+  .trouble:last-child { border-bottom: none; }
+  .trouble .titre { font-weight: 600; }
+  .trouble .niveau { font-weight: 600; font-size: 0.9rem; text-align: right; white-space: nowrap; }
+  .trouble .niveau.probable { color: var(--alerte); }
+  .trouble .niveau.possible { color: #b7791f; }
+  .trouble .niveau.peu { color: var(--texte-2); }
+  .trouble .desc { grid-column: 1 / -1; color: var(--texte-2); font-size: 0.85rem; }
+  .jauge { grid-column: 1 / -1; height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-top: 4px; }
+  .jauge span { display: block; height: 100%; border-radius: 999px; background: var(--texte-2); transform-origin: left; animation: remplit 400ms var(--ease-out) backwards; }
+  .jauge span.probable { background: var(--alerte); }
+  .jauge span.possible { background: #b7791f; }
+  @keyframes remplit { from { transform: scaleX(0); } }
   .galerie { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; margin-top: 14px; }
   .galerie button { padding: 6px; text-align: left; background: var(--surface); animation: apparait 260ms var(--ease-out) backwards; }
   .galerie button.actif { outline: 2px solid var(--accent); background: var(--accent-doux); color: var(--texte); }
@@ -179,6 +201,22 @@
         vaisseau. Inutile de viser au pixel près : le point se place tout seul sur le vaisseau le plus proche.</p>
       <p class="aide">Vous pouvez aussi glisser-déposer votre propre image sur la zone ci-dessus.</p>
     </div>
+
+    <section class="carte" id="panneauTroubles" aria-labelledby="titreTroubles">
+      <h2 id="titreTroubles">Signes de maladies de l'œil</h2>
+      <p class="aide" style="margin-top:0">Un réseau de neurones, entraîné sur 6 392 yeux de la base publique ODIR-5K, cherche
+        sur l'image les signes de six maladies : rétinopathie diabétique, glaucome, cataracte, DMLA, rétinopathie
+        hypertensive et myopie forte.</p>
+      <button type="button" id="analyser" class="principal" disabled>Analyser l'image</button>
+      <div id="resultatTroubles" aria-live="polite"></div>
+      <details id="lectureTroubles" hidden>
+        <summary>Comment lire ces pourcentages ?</summary>
+        <div id="explicationTroubles"></div>
+      </details>
+      <p class="aide avertissement">Démonstration de recherche, pas un diagnostic : seul un ophtalmologiste peut
+        diagnostiquer une maladie. Le réseau ne voit qu'une photo, sans l'âge ni les antécédents du patient, et ses
+        pourcentages valent pour une population comme celle d'ODIR (patients consultant en ophtalmologie).</p>
+    </section>
 
     <section class="carte" id="panneauMesures" aria-labelledby="titreMesures">
       <h2 id="titreMesures">Mesures vasculaires</h2>
@@ -309,7 +347,15 @@ const CONSIGNES = ["", "Cliquez le point de départ sur un vaisseau", "Cliquez l
 const $ = (id) => document.getElementById(id);
 const toile = $("toile"), ctx = toile.getContext("2d"), survol = $("survol"), sctx = survol.getContext("2d");
 const etat = { pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
-let sessionUnet = null;
+let sessionUnet = null, sessionTroubles = null, configTroubles = null;
+const DESCRIPTIONS_TROUBLES = {
+  diabete: "atteinte des petits vaisseaux due au diabète : petites hémorragies, dépôts jaunâtres",
+  glaucome: "atteinte du nerf optique, souvent liée à une pression trop élevée dans l'œil",
+  cataracte: "opacification du cristallin : la photo du fond d'œil paraît voilée",
+  dmla: "usure de la zone centrale de la rétine (la macula), fréquente après 60 ans",
+  hypertension: "dégâts sur les vaisseaux causés par une tension artérielle élevée",
+  myopie: "signes de myopie forte au fond d'œil : rétine étirée autour du nerf optique",
+};
 let py = null;
 
 const pause = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -349,7 +395,7 @@ function consigne(texte) {
 }
 
 function reglagesActifs(actifs) {
-  document.querySelectorAll("aside button, aside select, aside input, .outils button, #lancerGalerie, .galerie button, #mesurer")
+  document.querySelectorAll("aside button, aside select, aside input, .outils button, #lancerGalerie, .galerie button, #mesurer, #analyser")
     .forEach((el) => (el.disabled = !actifs || (el.id === "telecharger" && !etat.resultat) || (el.dataset.vue === "verite" && !etat.verite) || (el.dataset.vue === "segmentation" && !etat.segmentation)));
 }
 
@@ -421,6 +467,10 @@ async function chargerFichier(fichier) {
     } catch {
       throw new Error("ce fichier n'est pas une image lisible. Formats acceptés : JPEG, PNG, TIFF.");
     }
+    if (infos.erreur) {
+      throw new Error("aucun fond d'œil n'a été trouvé dans cette image. Utilisez une photo du fond de l'œil : "
+        + "un disque orangé, souvent sur fond noir (une page ou une capture d'écran qui en contient une convient aussi).");
+    }
     await installer(infos, fichier.name);
   });
   $("fichier").value = "";
@@ -431,6 +481,8 @@ async function installer(infos, source) {
   Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false });
   if (etat.vue === "segmentation") etat.vue = "originale";
   $("resultatMesures").replaceChildren();
+  $("resultatTroubles").replaceChildren();
+  $("lectureTroubles").hidden = true;
   if (!etat.verite && etat.vue === "verite") etat.vue = "originale";
   $("galerie").replaceChildren();
   document.querySelectorAll("#exemples button").forEach((b) => b.classList.toggle("actif", b.dataset.id === source));
@@ -439,8 +491,13 @@ async function installer(infos, source) {
   appeler("preparer", $("configA").value);
   await afficherVue(etat.vue);
   $("squelette").hidden = true;
+  const recadrage = infos.recadre
+    ? `<p class="aide"><strong>Œil délimité automatiquement</strong> : il occupait ${Math.round(100 * infos.part_image)} % de
+      votre image ; le reste (texte, schémas, fond) est ignoré. Les annotations dessinées sur la rétine elle-même
+      (cercles, flèches, légendes) restent visibles et peuvent gêner les analyses.</p>`
+    : "";
   synthese(`<p><strong>${etat.verite ? "Image annotée par un expert." : "Votre image est prête."}</strong>
-    Cliquez un point sur un vaisseau, puis un second plus loin sur le même vaisseau.</p>
+    Cliquez un point sur un vaisseau, puis un second plus loin sur le même vaisseau.</p>${recadrage}
     <p class="aide">${etat.verite ? "Le tracé sera comparé au chemin de l'expert." : "Sans annotation, le tracé ne peut pas être noté, mais vous pouvez comparer les prétraitements."}</p>`);
   $("details").hidden = true;
   $("telecharger").disabled = true;
@@ -707,8 +764,7 @@ async function cliquer(e) {
 async function mesurerVaisseaux() {
   await occuper("Segmentation par le U-Net et mesure des vaisseaux", async () => {
     if (!sessionUnet) {
-      ort.env.wasm.numThreads = 1;
-      ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+      preparerOrt();
       sessionUnet = await ort.InferenceSession.create("unet_drive.onnx");
     }
     const octets = appeler("entree_unet");
@@ -752,6 +808,89 @@ function afficherMesures(r) {
   zone.innerHTML = html;
 }
 
+function preparerOrt() {
+  ort.env.wasm.numThreads = 1;
+  ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+}
+
+function niveau(p) {
+  if (p >= 0.5) return ["probable", "probable"];
+  if (p >= 0.2) return ["possible", "possible"];
+  return ["peu probable", "peu"];
+}
+
+function qualiteDetection(auroc) {
+  if (auroc >= 0.9) return "détection fiable";
+  if (auroc >= 0.8) return "détection correcte";
+  return "détection limitée";
+}
+
+async function analyserTroubles() {
+  await occuper("Recherche de signes de maladies", async () => {
+    if (!sessionTroubles) {
+      preparerOrt();
+      configTroubles = await (await fetch("troubles.json")).json();
+      sessionTroubles = await ort.InferenceSession.create("troubles.onnx");
+    }
+    const octets = appeler("entree_troubles");
+    const entree = new Float32Array(octets.slice().buffer);
+    const sortie = await sessionTroubles.run({ image: new ort.Tensor("float32", entree, [1, 3, 384, 384]) });
+    const z = sortie.logits.data;
+    const resultats = configTroubles.ordre.map((cle, j) => {
+      const t = configTroubles.troubles[cle];
+      return { cle, ...t, p: 1 / (1 + Math.exp(-(t.a * z[j] + t.b))) };
+    });
+    afficherTroubles(resultats);
+  });
+}
+
+function afficherTroubles(resultats) {
+  const tries = [...resultats].sort((a, b) => b.p - a.p);
+  const probables = tries.filter((r) => r.p >= 0.5), possibles = tries.filter((r) => r.p >= 0.2 && r.p < 0.5);
+  const noms = (liste) => liste.map((r) => r.nom.split(" (")[0].toLowerCase()).join(", ");
+  let classe, titre, texte;
+  if (probables.length) {
+    classe = "alerte";
+    titre = `Signes probables : ${noms(probables)}`;
+    texte = "Le réseau voit sur cette image des signes nets. À faire vérifier par un ophtalmologiste.";
+  } else if (possibles.length) {
+    classe = "attention";
+    titre = `Signes possibles : ${noms(possibles)}`;
+    texte = "Quelques signes, sans certitude. Ce n'est pas un diagnostic.";
+  } else {
+    classe = "calme";
+    titre = "Aucun signe net des six maladies recherchées";
+    texte = "Le réseau ne voit rien de marquant. Il peut toutefois passer à côté d'une maladie débutante.";
+  }
+  let html = `<div class="verdict ${classe}"><span class="pastille-ronde" aria-hidden="true"></span><div><strong>${echapper(titre)}</strong>${echapper(texte)}</div></div>`;
+  for (const r of tries) {
+    const [mot, classeNiveau] = niveau(r.p);
+    const pourcentage = Math.round(100 * r.p);
+    html += `<div class="trouble">
+      <span class="titre">${echapper(r.nom)}</span>
+      <span class="niveau ${classeNiveau}">${mot} · ${pourcentage} %</span>
+      <div class="jauge" role="img" aria-label="${echapper(r.nom)} : ${pourcentage} %"><span class="${classeNiveau}" style="width:${Math.max(2, pourcentage)}%"></span></div>
+      <span class="desc">${echapper(DESCRIPTIONS_TROUBLES[r.cle] || "")} · ${qualiteDetection(r.auroc)}</span>
+    </div>`;
+  }
+  $("resultatTroubles").innerHTML = html;
+  let explication = `<p class="aide">Chaque pourcentage est une probabilité calibrée : sur des yeux d'une population comme celle
+    d'ODIR, « 70 % » correspond à environ 7 yeux atteints sur 10. En dessous de 20 % : peu probable ; de 20 à 50 % :
+    possible ; au-dessus de 50 % : probable.</p><div class="tableau"><table><thead><tr><th>Maladie</th>
+    <th>Qualité de détection (AUROC)</th><th>Atteints parmi les yeux jugés « probable »</th><th>Atteints repérés dès « possible »</th></tr></thead><tbody>`;
+  for (const cle of configTroubles.ordre) {
+    const t = configTroubles.troubles[cle], p = t.niveaux.probable;
+    explication += `<tr><td>${echapper(t.nom.split(" (")[0])}</td><td>${fr(t.auroc, 2)} (${qualiteDetection(t.auroc)})</td>
+      <td>${p.part_atteints == null ? "n/d" : `${Math.round(100 * p.part_atteints)} %`}</td><td>${Math.round(100 * t.detectes_des_possible)} %</td></tr>`;
+  }
+  explication += `</tbody></table></div><p class="aide">Mesures faites sur des yeux que le réseau n'avait jamais vus (validation
+    croisée par patient). L'AUROC vaut 1 pour une détection parfaite et 0,5 pour le hasard.
+    <a href="https://github.com/sheene123/retina-vessel-tracing/blob/main/docs/troubles.md">Détails de l'évaluation</a>.</p>`;
+  $("explicationTroubles").innerHTML = explication;
+  $("lectureTroubles").hidden = false;
+  $("lectureTroubles").querySelectorAll('a[href^="http"]').forEach((a) => { a.target = "_blank"; a.rel = "noopener noreferrer"; });
+}
+
 function initialiser() {
   tirerExemples();
   $("autresExemples").addEventListener("click", async () => {
@@ -776,6 +915,7 @@ function initialiser() {
   for (const id of ["algo", "alpha"]) $(id).addEventListener("change", tracer);
   $("lancerGalerie").addEventListener("click", galerie);
   $("mesurer").addEventListener("click", mesurerVaisseaux);
+  $("analyser").addEventListener("click", analyserTroubles);
   $("voirReference").addEventListener("change", dessiner);
   document.addEventListener("keydown", (e) => e.key === "Escape" && !etat.occupe && effacer());
 

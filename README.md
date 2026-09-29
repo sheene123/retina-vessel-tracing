@@ -1,6 +1,7 @@
 # Tracé des vaisseaux sanguins rétiniens par plus court chemin
 
 [![ci](https://github.com/sheene123/retina-vessel-tracing/actions/workflows/ci.yml/badge.svg)](https://github.com/sheene123/retina-vessel-tracing/actions/workflows/ci.yml)
+[![déploiement](https://github.com/sheene123/retina-vessel-tracing/actions/workflows/deploiement.yml/badge.svg)](https://github.com/sheene123/retina-vessel-tracing/actions/workflows/deploiement.yml)
 [![Démo sur Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20D%C3%A9mo-Hugging%20Face-yellow)](https://huggingface.co/spaces/sheenee261/retina-vessel-tracing)
 
 **Démo en ligne : https://huggingface.co/spaces/sheenee261/retina-vessel-tracing** (tout s'exécute dans le navigateur).
@@ -164,6 +165,15 @@ croisée groupée par patient ([docs/hypertension.md](docs/hypertension.md)).
 L'œil contient bien l'information, et les marqueurs vasculaires en captent une partie. Mais
 avec 3,6 % de cas positifs, seuls 9 % des yeux signalés par le réseau sont réellement atteints :
 c'est un résultat de recherche, pas un outil de dépistage.
+
+## Déploiement continu
+
+Les modèles sont entraînés sur GPU, puis publiés dans un **registre versionné**
+([Hugging Face Hub](https://huggingface.co/sheenee261/retina-vessel-tracing)) après une validation
+indépendante et une comparaison avec la version en production (champion / challenger). Un tag Git
+déclenche ensuite en CI une **seconde validation** : le Dice du U-Net est recalculé sur DRIVE à
+partir du modèle publié. Viennent ensuite le déploiement de l'API (image GHCR), de la démo et une
+release. Détails : [docs/deploiement.md](docs/deploiement.md).
 
 ## Démarrage rapide
 

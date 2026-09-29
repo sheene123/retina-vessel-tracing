@@ -21,6 +21,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--space", required=True, help="identifiant du Space, ex. utilisateur/retina-vessel-tracing")
     parser.add_argument("--message", default="Met à jour la démo web")
+    parser.add_argument("--depuis-registre", metavar="VERSION", help="prend les modèles de cette version du registre")
+    parser.add_argument("--registre", default="sheenee261/retina-vessel-tracing")
     args = parser.parse_args()
 
     with tempfile.TemporaryDirectory() as construction, tempfile.TemporaryDirectory() as dossier:
@@ -32,14 +34,26 @@ def main() -> int:
             shutil.copy(roue, site / roue.name)
         for fichier in ("index.html", "pont.py", "README.md"):
             shutil.copy(RACINE / "demo" / "web" / fichier, site / fichier)
-        # U-Net exporté (python -m vaisseaux.unet --onnx modeles/unet_drive.onnx) et fiabilité issue de l'étude
-        for source, cible in (
-            (RACINE / "modeles" / "unet_drive.onnx", "unet_drive.onnx"),
-            (RACINE / "resultats" / "etude_metriques" / "fiabilite_unet.json", "fiabilite.json"),
-        ):
-            if not source.exists():
-                raise SystemExit(f"{source} manquant : entraînez et exportez le U-Net, puis lancez l'étude")
-            shutil.copy(source, site / cible)
+        if args.depuis_registre:
+            # modèles d'une version du registre (déploiement continu)
+            from huggingface_hub import hf_hub_download
+
+            for fichier in ("unet_drive.onnx", "fiabilite.json", "troubles.onnx", "troubles.json"):
+                chemin = hf_hub_download(args.registre, fichier, repo_type="model", revision=args.depuis_registre)
+                shutil.copy(chemin, site / fichier)
+        else:
+            # modèles locaux (poste d'entraînement)
+            for source, cible in (
+                (RACINE / "modeles" / "unet_drive.onnx", "unet_drive.onnx"),
+                (RACINE / "resultats" / "etude_metriques" / "fiabilite_unet.json", "fiabilite.json"),
+                (RACINE / "modeles" / "troubles.onnx", "troubles.onnx"),
+                (RACINE / "resultats" / "troubles" / "troubles_demo.json", "troubles.json"),
+            ):
+                if not source.exists():
+                    raise SystemExit(
+                        f"{source} manquant : entraînez et exportez les modèles, ou utilisez --depuis-registre"
+                    )
+                shutil.copy(source, site / cible)
         api = HfApi()
         api.create_repo(args.space, repo_type="space", space_sdk="static", exist_ok=True)
         api.upload_folder(

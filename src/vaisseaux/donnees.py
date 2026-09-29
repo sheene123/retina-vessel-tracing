@@ -65,3 +65,67 @@ def charger(racine: Path | str, partie: str, identifiant: str) -> ImageRetine:
     annotations = [_premier(base / d, f"{identifiant}_*") for d in ("1st_manual", "2nd_manual")]
     v1, v2 = (lire_image(a) > 0 if a else None for a in annotations)
     return ImageRetine(identifiant, rgb, masque, v1, v2)
+
+
+# normalisation ImageNet, utilisée par le réseau de détection des troubles
+MOYENNE_IMAGENET = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+ECART_IMAGENET = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+
+def carre_fond_oeil(rgb: np.ndarray, taille: int = 384) -> np.ndarray:
+    """Recadre sur le disque du fond d'œil, complète en carré noir et redimensionne : même
+    présentation que les images prétraitées d'ODIR-5K sur lesquelles le réseau est entraîné."""
+    masque = estimer_masque_fov(rgb, marge=0)
+    lignes, colonnes = np.nonzero(masque)
+    if lignes.size:
+        rgb = rgb[lignes.min() : lignes.max() + 1, colonnes.min() : colonnes.max() + 1]
+    h, w = rgb.shape[:2]
+    cote = max(h, w)
+    carre = np.zeros((cote, cote, 3), dtype=np.uint8)
+    carre[(cote - h) // 2 : (cote - h) // 2 + h, (cote - w) // 2 : (cote - w) // 2 + w] = rgb[..., :3]
+    return np.asarray(Image.fromarray(carre).resize((taille, taille), Image.Resampling.BILINEAR))
+
+
+def entree_imagenet(carre: np.ndarray) -> np.ndarray:
+    """(taille, taille, 3) uint8 -> (3, taille, taille) float32 normalisé."""
+    return ((carre.astype(np.float32) / 255.0 - MOYENNE_IMAGENET) / ECART_IMAGENET).transpose(2, 0, 1).copy()
+
+
+def localiser_fond_oeil(
+    rgb: np.ndarray, surface_min: float = 0.03
+) -> tuple[tuple[int, int, int, int], np.ndarray] | None:
+    """Trouve le fond d'œil dans une image quelconque (photo, capture d'écran, page de manuel).
+
+    Les pixels de rétine sont orangés et saturés : on garde la plus grande zone de cette couleur,
+    puis son enveloppe convexe (qui englobe le disque optique jaune et les annotations tracées
+    dessus). Renvoie (haut, bas, gauche, droite) et le masque de l'œil dans ce cadre, ou None si
+    aucune zone assez grande n'est trouvée.
+    """
+    from skimage.morphology import convex_hull_image
+
+    h, w = rgb.shape[:2]
+    echelle = max(1.0, max(h, w) / 400)
+    petit = np.asarray(Image.fromarray(rgb[..., :3]).resize((max(1, round(w / echelle)), max(1, round(h / echelle)))))
+    x = petit.astype(np.float32) / 255.0
+    r, g, b = x[..., 0], x[..., 1], x[..., 2]
+    maximum, minimum = x.max(axis=-1), x.min(axis=-1)
+    saturation = (maximum - minimum) / (maximum + 1e-6)
+    retine = (r >= g) & (g >= 0.8 * b) & (saturation > 0.35) & (maximum > 0.25)  # teintes rouge à jaune
+    retine = ndi.binary_closing(ndi.binary_opening(retine, iterations=2), iterations=3)
+    etiquettes, n = ndi.label(retine)
+    if n == 0:
+        return None
+    tailles = ndi.sum(retine, etiquettes, range(1, n + 1))
+    zone = etiquettes == int(np.argmax(tailles)) + 1
+    if zone.sum() < surface_min * zone.size:
+        return None
+    enveloppe = convex_hull_image(ndi.binary_fill_holes(zone))
+    lignes, colonnes = np.nonzero(enveloppe)
+    haut, bas = int(lignes.min() * echelle), min(h, int((lignes.max() + 1) * echelle))
+    gauche, droite = int(colonnes.min() * echelle), min(w, int((colonnes.max() + 1) * echelle))
+    masque = np.asarray(
+        Image.fromarray(enveloppe[lignes.min() : lignes.max() + 1, colonnes.min() : colonnes.max() + 1]).resize(
+            (droite - gauche, bas - haut), Image.Resampling.NEAREST
+        )
+    )
+    return (haut, bas, gauche, droite), ndi.binary_erosion(masque, iterations=3)

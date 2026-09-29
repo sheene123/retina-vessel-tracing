@@ -13,7 +13,7 @@ from PIL import Image
 
 from vaisseaux.benchmark import CONFIGURATIONS
 from vaisseaux.biomarqueurs import MARQUEURS, mesurer
-from vaisseaux.donnees import estimer_masque_fov
+from vaisseaux.donnees import carre_fond_oeil, entree_imagenet, localiser_fond_oeil
 from vaisseaux.evaluation import auc_roc, evaluer_trace, metriques_binaires, reference_entre
 from vaisseaux.graphe import carte_de_cout, plus_court_chemin
 from vaisseaux.pretraitement import normaliser_pour_reseau, pretraiter
@@ -52,20 +52,45 @@ def _ouvrir(octets) -> Image.Image:
 
 
 def charger_image(octets, octets_verite=None) -> str:
-    """Décode l'image (TIFF compris), la réduit si besoin. Renvoie un JSON avec la taille et
-    la présence d'une vérité terrain."""
-    image = _ouvrir(octets).convert("RGB")
-    echelle = max(image.size) / COTE_MAX
-    taille = (round(image.width / echelle), round(image.height / echelle)) if echelle > 1 else image.size
-    image = image.resize(taille, Image.Resampling.LANCZOS) if echelle > 1 else image
-    _etat.clear()
-    _etat["rgb"] = np.asarray(image)
-    _etat["masque"] = estimer_masque_fov(_etat["rgb"])
-    _etat["cartes"] = {}
+    """Décode l'image (TIFF compris), repère le fond d'œil, recadre dessus et met en noir tout ce
+    qui n'est pas l'œil (texte, schémas, fond de page), puis réduit si besoin. Renvoie un JSON
+    avec la taille, la présence d'une vérité terrain et ce qui a été fait."""
+    image = np.asarray(_ouvrir(octets).convert("RGB"))
+    hauteur_origine, largeur_origine = image.shape[:2]
+    trouve = localiser_fond_oeil(image)
+    if trouve is None:
+        return json.dumps({"erreur": "aucun fond d'œil détecté dans cette image"})
+    (haut, bas, gauche, droite), oeil = trouve
+    image = image[haut:bas, gauche:droite].copy()
+    image[~oeil] = 0
+    recadre = (bas - haut) * (droite - gauche) < 0.9 * hauteur_origine * largeur_origine
+    verite = None
     if octets_verite is not None:
-        verite = _ouvrir(octets_verite).convert("L").resize(taille, Image.Resampling.NEAREST)
-        _etat["verite"] = np.asarray(verite) > 127
-    return json.dumps({"largeur": taille[0], "hauteur": taille[1], "verite": "verite" in _etat})
+        verite = np.asarray(_ouvrir(octets_verite).convert("L"))[haut:bas, gauche:droite] > 127
+
+    echelle = max(image.shape[:2]) / COTE_MAX
+    taille = (image.shape[1], image.shape[0])
+    if echelle > 1:
+        taille = (round(image.shape[1] / echelle), round(image.shape[0] / echelle))
+        image = np.asarray(Image.fromarray(image).resize(taille, Image.Resampling.LANCZOS))
+        oeil = np.asarray(Image.fromarray(oeil).resize(taille, Image.Resampling.NEAREST))
+        if verite is not None:
+            verite = np.asarray(Image.fromarray(verite).resize(taille, Image.Resampling.NEAREST))
+    _etat.clear()
+    _etat["rgb"] = image
+    _etat["masque"] = oeil
+    _etat["cartes"] = {}
+    if verite is not None:
+        _etat["verite"] = verite
+    return json.dumps(
+        {
+            "largeur": taille[0],
+            "hauteur": taille[1],
+            "verite": "verite" in _etat,
+            "recadre": bool(recadre),
+            "part_image": round((bas - haut) * (droite - gauche) / (hauteur_origine * largeur_origine), 3),
+        }
+    )
 
 
 def _cartes(config: str):
@@ -244,3 +269,12 @@ def mesures() -> str:
     if expert is not None:
         reponse["dice"] = metriques_binaires(_etat["segmentation"], _etat["verite"], masque)["dice"]
     return json.dumps(reponse)
+
+
+# ---------------------------------------------------------------- troubles de l'œil
+# Le réseau (ONNX) tourne côté JavaScript ; Python prépare l'image comme à l'entraînement.
+
+
+def entree_troubles() -> bytes:
+    """Fond d'œil recadré en carré 384 × 384, normalisé ImageNet, float32 (3, 384, 384)."""
+    return entree_imagenet(carre_fond_oeil(_etat["rgb"])).tobytes()

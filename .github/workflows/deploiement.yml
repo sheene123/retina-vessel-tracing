@@ -1,0 +1,112 @@
+name: deploiement
+
+# Déploiement continu. Les modèles sont entraînés sur GPU puis publiés dans le registre
+# (scripts/publier_modeles.py, avec comparaison champion / challenger). Un tag de version (v*)
+# déclenche ici la validation indépendante de cette version du registre, puis le déploiement de
+# l'API, de la démo et de la release. Rien n'est déployé si la validation échoue.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version du registre à déployer (ex. v0.2.0)"
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: deploiement
+  cancel-in-progress: false
+
+env:
+  VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+  REGISTRE: sheenee261/retina-vessel-tracing
+  SPACE: sheenee261/retina-vessel-tracing
+  IMAGE: ghcr.io/sheene123/retina-vessel-tracing
+
+jobs:
+  valider:
+    name: Validation indépendante du registre
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Installation
+        run: pip install -e . onnxruntime huggingface_hub
+      - name: Données de test DRIVE
+        run: python scripts/telecharger_drive.py
+      - name: Recalculer les performances de la version publiée
+        run: python scripts/valider_modeles.py --version "$VERSION" --repo "$REGISTRE" --sortie validation.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validation
+          path: validation.json
+
+  image:
+    name: Image Docker de l'API (GHCR)
+    needs: valider
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Construire, tester, pousser
+        run: |
+          docker build -t "$IMAGE:$VERSION" -t "$IMAGE:latest" .
+          docker run -d --name api -p 8000:8000 "$IMAGE:$VERSION"
+          for i in $(seq 1 30); do curl -fs localhost:8000/sante && break; sleep 1; done
+          curl -fs localhost:8000/sante
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE:latest"
+          printf "## Image\n\n%s\n" "$IMAGE:$VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+  demo:
+    name: Démo (Space Hugging Face)
+    needs: valider
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install huggingface_hub uv
+      - name: Déployer la démo avec les modèles de cette version
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          test -n "$HF_TOKEN" || { echo "::error::secret HF_TOKEN absent de l'environnement production"; exit 1; }
+          python scripts/deployer_space.py --space "$SPACE" --depuis-registre "$VERSION" --message "Déploie $VERSION"
+
+  release:
+    name: Release GitHub
+    needs: [image, demo]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: validation
+      - name: Créer la release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "Modèles : https://huggingface.co/$REGISTRE/tree/$VERSION"
+            echo "Démo : https://huggingface.co/spaces/$SPACE"
+            echo "Image : $IMAGE:$VERSION"
+            echo
+            echo '```json'
+            cat validation.json
+            echo '```'
+          } > notes.md
+          gh release create "$VERSION" --repo "${{ github.repository }}" --title "Tracé des vaisseaux $VERSION" --notes-file notes.md validation.json
