@@ -61,6 +61,32 @@ Sur les seules images ODIR, le nouveau modèle fait jeu égal avec l'ancien (par
 0,84 pour la rétinopathie diabétique) : le gain porte sur la généralisation à d'autres hôpitaux et
 appareils, ce qui était le but.
 
+### Pourquoi certains chiffres externes sont proches de 1
+
+Un AUROC de 1,00 sur JSIEC ne veut pas dire une détection parfaite :
+
+- ce sont des arrondis (0,997 pour le glaucome, 0,999 pour la myopie) ;
+- l'AUROC mesure un classement (chaque œil atteint a-t-il un score plus haut que chaque œil sain ?), pas
+  l'absence d'erreurs : au seuil « possible », 17 % des yeux sans glaucome sont signalés à tort en validation
+  croisée, et 16 % dans JSIEC ;
+- JSIEC compte peu de cas pour certains troubles (13 glaucomes, 15 rétinopathies hypertensives) : avec 13 cas
+  tous détectés, la sensibilité réelle pourrait descendre vers 75 %, et l'intervalle de confiance par bootstrap
+  est trop étroit ;
+- ses photos montrent surtout des cas typiques, souvent avancés (« rétinopathie hypertensive sévère »,
+  « myopie pathologique »), une seule maladie nette par image : les formes débutantes, les cas limites et les
+  photos de mauvaise qualité, les plus difficiles, y sont rares.
+
+La validation croisée (des milliers d'yeux de gravité et de qualité variables) est la mesure la plus
+représentative. La démo et la fiche du registre affichent donc la qualité de détection d'après elle, avec la part
+de cas repérés et de fausses alertes, et donnent le résultat externe avec son nombre de cas.
+
+### Exemples à diagnostic connu dans la démo
+
+La démo propose 12 photos de JSIEC (2 yeux sains, 2 par trouble sauf la cataracte, absente de JSIEC), tirées au
+hasard avec une graine fixe sans regarder la réponse du réseau ([preparer_exemples_malades.py](../scripts/preparer_exemples_malades.py)).
+Après l'analyse, le diagnostic posé par l'hôpital s'affiche à côté de la réponse du réseau, erreurs comprises.
+Images : Joint Shantou International Eye Centre (Cen et al., *Nature Communications*, 2021), licence DbCL 1.0.
+
 À lire avec prudence :
 
 - dans JSIEC, la DMLA est approchée par la catégorie « maculopathie », et la rétinopathie

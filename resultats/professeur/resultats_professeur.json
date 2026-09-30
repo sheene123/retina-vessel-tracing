@@ -1,0 +1,18 @@
+{
+ "architecture": "vit_large_patch14_dinov2.lvd142m",
+ "taille": 224,
+ "auroc_hors_moitie": 0.9102046236077134,
+ "auroc_par_source": {
+  "odir": 0.9235597718277968,
+  "rfmid": 0.931102591814678,
+  "sjchoi86": 0.933019801980198,
+  "smdg": 0.8085676971518534
+ },
+ "auroc_externe_jsiec": 0.9992515592515592,
+ "auroc_externe_jsiec_gros_plan": 0.9996673596673596,
+ "calibrage": [
+  0.6254991564664261,
+  -1.403645109102077
+ ],
+ "duree_s": 3914.1
+}

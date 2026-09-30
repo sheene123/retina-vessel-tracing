@@ -62,6 +62,13 @@
   .choix-image { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .choix-image button { padding: 8px 4px; font-weight: 500; }
   .lien-bouton { background: none; border: none; padding: 4px 0; margin-top: 4px; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; font-size: 0.88rem; }
+  .choix-malades { grid-template-columns: repeat(2, 1fr); margin-top: 6px; }
+  .sous-titre { font-size: 0.92rem; margin: 18px 0 0; }
+  .etiquette { border: 1px solid var(--bord, #d0d7de); border-left: 4px solid var(--accent); border-radius: 8px;
+    padding: 10px 12px; margin: 0 0 12px; font-size: 0.92rem; line-height: 1.45; }
+  .etiquette small { color: var(--texte-2); }
+  .etiquette .ok { color: #1a7f37; font-weight: 600; }
+  .etiquette .ko { color: #b42318; font-weight: 600; }
   .choix-image button small { display: block; opacity: 0.72; font-size: 0.75rem; font-weight: 400; }
   .bouton { display: block; margin-top: 8px; text-align: center; font-weight: 500; }
   .bouton input { display: none; }
@@ -250,6 +257,11 @@
     <label class="bouton">Utiliser ma propre image<input type="file" id="fichier" accept="image/*,.tif,.tiff"></label>
     <p class="aide">Trois images tirées au hasard parmi les 20 images de test de la base publique DRIVE, annotées par un
       expert : le tracé et les mesures y sont comparés à l'expert.</p>
+    <h3 class="sous-titre">Yeux malades, diagnostic connu</h3>
+    <div class="choix-image choix-malades" id="exemplesMalades"></div>
+    <p class="aide">Photos d'un hôpital que le réseau n'a jamais vu (JSIEC, Chine), tirées au hasard dans chaque
+      catégorie, sans choisir celles où il a raison. Après « Analyser l'image », le diagnostic de l'image s'affiche à
+      côté de la réponse du réseau.</p>
 
     <h2>Prétraitement</h2>
     <select id="configA" aria-label="Prétraitement du tracé"></select>
@@ -288,7 +300,8 @@
 
 <footer>
   <p>Exemples : jeu de test public DRIVE (J. Staal et al., <em>Ridge-based vessel segmentation in color images of the retina</em>,
-  IEEE TMI, 2004), chargés depuis un miroir public et non redistribués ici. Code sous licence MIT.</p>
+  IEEE TMI, 2004), chargés depuis un miroir public et non redistribués ici. Yeux malades : Joint Shantou International
+  Eye Centre (Cen et al., <em>Nature Communications</em>, 2021), licence DbCL 1.0. Code sous licence MIT.</p>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.js"></script>
@@ -347,7 +360,7 @@ const CONSIGNES = ["", "Cliquez le point de départ sur un vaisseau", "Cliquez l
 
 const $ = (id) => document.getElementById(id);
 const toile = $("toile"), ctx = toile.getContext("2d"), survol = $("survol"), sctx = survol.getContext("2d");
-const etat = { fichierEnAttente: null, pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
+const etat = { etiquette: null, fichierEnAttente: null, pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
 let sessionUnet = null, sessionTroubles = null, configTroubles = null;
 const DESCRIPTIONS_TROUBLES = {
   diabete: "atteinte des petits vaisseaux due au diabète : petites hémorragies, dépôts jaunâtres",
@@ -461,6 +474,36 @@ async function chargerExemple(id) {
   });
 }
 
+// exemples d'yeux malades (test externe JSIEC), avec leur diagnostic
+let exemplesMalades = [];
+
+async function preparerExemplesMalades() {
+  try {
+    exemplesMalades = await (await fetch("exemples/exemples.json")).json();
+  } catch {
+    return; // sans le dossier d'exemples, le groupe reste vide
+  }
+  const conteneur = $("exemplesMalades");
+  conteneur.replaceChildren();
+  for (const ex of exemplesMalades) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.id = ex.fichier;
+    b.innerHTML = `${echapper(ex.diagnostic)}<small>exemple ${ex.numero}</small>`;
+    b.addEventListener("click", () => chargerExempleMalade(ex));
+    conteneur.append(b);
+  }
+  if (etat.pret) reglagesActifs(!etat.occupe);
+}
+
+async function chargerExempleMalade(ex) {
+  await occuper("Chargement de l'exemple", async () => {
+    const image = await telecharger(`exemples/${ex.fichier}`);
+    await installer(JSON.parse(appeler("charger_image", image)), ex.fichier);
+    etat.etiquette = ex;
+  });
+}
+
 async function chargerFichier(fichier) {
   if (!etat.pret) {
     etat.fichierEnAttente = fichier; // chargée dès que Python est prêt
@@ -486,14 +529,14 @@ async function chargerFichier(fichier) {
 
 async function installer(infos, source) {
   for (const t of [toile, survol]) { t.width = infos.largeur; t.height = infos.hauteur; }
-  Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false });
+  Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false, etiquette: null });
   if (etat.vue === "segmentation") etat.vue = "originale";
   $("resultatMesures").replaceChildren();
   $("resultatTroubles").replaceChildren();
   $("lectureTroubles").hidden = true;
   if (!etat.verite && etat.vue === "verite") etat.vue = "originale";
   $("galerie").replaceChildren();
-  document.querySelectorAll("#exemples button").forEach((b) => b.classList.toggle("actif", b.dataset.id === source));
+  document.querySelectorAll("#exemples button, #exemplesMalades button").forEach((b) => b.classList.toggle("actif", b.dataset.id === source));
   consigne("Préparation de l'image");
   await pause();
   appeler("preparer", $("configA").value);
@@ -826,6 +869,17 @@ function seuils(t) {
   return [t.seuil_possible ?? 0.2, configTroubles?.seuil_probable ?? 0.5];
 }
 
+// nom court d'un trouble : « glaucome », mais « DMLA » (les sigles gardent leurs capitales)
+function nomCourt(nom) {
+  const n = nom.split(" (")[0];
+  return n === n.toUpperCase() ? n : n.toLowerCase();
+}
+
+// pourcentage affiché : une décimale sous 10 %, pour ne pas lire « 3 % » quand le seuil est 3 %
+function pourcent(p) {
+  return p < 0.1 ? fr(100 * p, 1) : String(Math.round(100 * p));
+}
+
 function niveau(p, t) {
   const [possible, probable] = seuils(t);
   if (p >= probable) return ["probable", "probable"];
@@ -863,7 +917,7 @@ function afficherTroubles(resultats) {
   const tries = [...resultats].sort((a, b) => b.p - a.p);
   const probables = tries.filter((r) => niveau(r.p, r)[1] === "probable");
   const possibles = tries.filter((r) => niveau(r.p, r)[1] === "possible");
-  const noms = (liste) => liste.map((r) => r.nom.split(" (")[0].toLowerCase()).join(", ");
+  const noms = (liste) => liste.map((r) => nomCourt(r.nom)).join(", ");
   let classe, titre, texte;
   if (probables.length) {
     classe = "alerte";
@@ -878,15 +932,35 @@ function afficherTroubles(resultats) {
     titre = "Aucun signe net des six maladies recherchées";
     texte = "Le réseau ne voit rien de marquant. Il peut toutefois passer à côté d'une maladie débutante.";
   }
-  let html = `<div class="verdict ${classe}"><span class="pastille-ronde" aria-hidden="true"></span><div><strong>${echapper(titre)}</strong>${echapper(texte)}</div></div>`;
+  let html = "";
+  if (etat.etiquette) {
+    const e = etat.etiquette;
+    let comparaison;
+    if (e.trouble) {
+      const r = resultats.find((x) => x.cle === e.trouble);
+      const [mot, code] = niveau(r.p, r);
+      comparaison = code === "peu"
+        ? `<span class="ko">✗ manqué</span> : le réseau juge « ${nomCourt(r.nom)} » peu probable (${pourcent(r.p)} %).`
+        : `<span class="ok">✓ trouvé</span> : le réseau juge « ${nomCourt(r.nom)} » ${mot} (${pourcent(r.p)} %).`;
+    } else {
+      const signales = resultats.filter((x) => niveau(x.p, x)[1] !== "peu");
+      comparaison = signales.length
+        ? `<span class="ko">✗ fausse alerte</span> : le réseau signale ${echapper(noms(signales))}.`
+        : `<span class="ok">✓ correct</span> : le réseau ne signale aucune des six maladies.`;
+    }
+    html += `<div class="etiquette"><strong>Diagnostic connu de cette image : ${echapper(e.diagnostic)}</strong>
+      ${e.precision ? `<small>(${echapper(e.precision)})</small>` : ""}<br>${comparaison}
+      <br><small>Catégorie JSIEC « ${echapper(e.categorie)} », posée par les ophtalmologistes de l'hôpital.</small></div>`;
+  }
+  html += `<div class="verdict ${classe}"><span class="pastille-ronde" aria-hidden="true"></span><div><strong>${echapper(titre)}</strong>${echapper(texte)}</div></div>`;
   for (const r of tries) {
     const [mot, classeNiveau] = niveau(r.p, r);
     const pourcentage = Math.round(100 * r.p);
     html += `<div class="trouble">
       <span class="titre">${echapper(r.nom)}</span>
-      <span class="niveau ${classeNiveau}">${mot} · ${pourcentage} %</span>
-      <div class="jauge" role="img" aria-label="${echapper(r.nom)} : ${pourcentage} %"><span class="${classeNiveau}" style="width:${Math.max(2, pourcentage)}%"></span></div>
-      <span class="desc">${echapper(DESCRIPTIONS_TROUBLES[r.cle] || "")} · ${qualiteDetection(r.auroc_externe ?? r.auroc)}</span>
+      <span class="niveau ${classeNiveau}">${mot} · ${pourcent(r.p)} %</span>
+      <div class="jauge" role="img" aria-label="${echapper(r.nom)} : ${pourcent(r.p)} %"><span class="${classeNiveau}" style="width:${Math.max(2, pourcentage)}%"></span></div>
+      <span class="desc">${echapper(DESCRIPTIONS_TROUBLES[r.cle] || "")} · ${qualiteDetection(r.auroc)}</span>
     </div>`;
   }
   $("resultatTroubles").innerHTML = html;
@@ -896,16 +970,21 @@ function afficherTroubles(resultats) {
     « possible » dépend de la maladie : il est placé pour signaler environ 8 yeux atteints sur 10, donc plus bas pour les
     maladies rares (quelques pourcents pour la rétinopathie hypertensive), qui atteignent rarement des pourcentages élevés.</p>
     <div class="tableau"><table><thead><tr><th>Maladie</th><th>« Possible » dès</th>
-    <th>Qualité de détection (AUROC)</th>${externe ? "<th>Sur un hôpital jamais vu (AUROC)</th>" : ""}<th>Atteints parmi les yeux jugés « probable »</th><th>Atteints repérés dès « possible »</th></tr></thead><tbody>`;
+    <th>Qualité de détection (AUROC, validation croisée)</th><th>Atteints repérés dès « possible »</th>
+    <th>Fausses alertes (yeux sans la maladie signalés)</th>${externe ? "<th>Hôpital jamais vu (AUROC, nombre de cas)</th>" : ""}</tr></thead><tbody>`;
+  const pct = (v) => (v == null ? "n/d" : `${Math.round(100 * v)} %`);
   for (const cle of configTroubles.ordre) {
-    const t = configTroubles.troubles[cle], p = t.niveaux.probable;
-    const colonneExterne = !externe ? "" : `<td>${t.auroc_externe == null ? "non testé" : `${fr(t.auroc_externe, 2)} (${qualiteDetection(t.auroc_externe)})`}</td>`;
-    explication += `<tr><td>${echapper(t.nom.split(" (")[0])}</td><td>${fr(100 * seuils(t)[0], seuils(t)[0] < 0.1 ? 1 : 0)} %</td><td>${fr(t.auroc, 2)} (${qualiteDetection(t.auroc)})</td>${colonneExterne}
-      <td>${p.part_atteints == null ? "n/d" : `${Math.round(100 * p.part_atteints)} %`}</td><td>${Math.round(100 * t.detectes_des_possible)} %</td></tr>`;
+    const t = configTroubles.troubles[cle];
+    const colonneExterne = !externe ? "" : `<td>${t.auroc_externe == null ? "pas de cas" : `${fr(t.auroc_externe, 3)} (${t.atteints_externe ?? "?"} cas)`}</td>`;
+    explication += `<tr><td>${echapper(t.nom.split(" (")[0])}</td><td>${fr(100 * seuils(t)[0], seuils(t)[0] < 0.1 ? 1 : 0)} %</td>
+      <td>${fr(t.auroc, 2)} (${qualiteDetection(t.auroc)})</td><td>${pct(t.detectes_des_possible)}</td><td>${pct(t.fausses_alertes)}</td>${colonneExterne}</tr>`;
   }
-  explication += `</tbody></table></div><p class="aide">Mesures faites sur des yeux que le réseau n'avait jamais vus (validation
-    croisée par patient)${externe ? ", puis sur 1 000 photos d'un autre hôpital (JSIEC, Chine), jamais utilisées pour l'entraînement" : ""}.
-    L'AUROC vaut 1 pour une détection parfaite et 0,5 pour le hasard.
+  explication += `</tbody></table></div><p class="aide">Validation croisée : des milliers d'yeux que le réseau n'avait pas
+    vus, de gravité et de qualité variables ; c'est la mesure la plus représentative. L'AUROC vaut 1 si chaque œil malade
+    reçoit un score plus haut que chaque œil sain, 0,5 pour le hasard ; elle ne dit pas qu'il n'y a pas d'erreur : au seuil
+    « possible », il y a toujours des cas manqués et des fausses alertes (colonnes précédentes).${externe ? ` Hôpital
+    jamais vu : 1 000 photos de JSIEC (Chine), jamais utilisées pour l'entraînement ; ce test est optimiste, car ses photos
+    montrent surtout des cas typiques, souvent avancés, et certaines maladies y ont peu de cas (13 glaucomes).` : ""}
     <a href="https://github.com/sheene123/retina-vessel-tracing/blob/main/docs/troubles.md">Détails de l'évaluation</a>.</p>`;
   $("explicationTroubles").innerHTML = explication;
   $("lectureTroubles").hidden = false;
@@ -914,6 +993,7 @@ function afficherTroubles(resultats) {
 
 function initialiser() {
   tirerExemples();
+  preparerExemplesMalades();
   $("autresExemples").addEventListener("click", async () => {
     tirerExemples();
     await chargerExemple(exemples[0]);

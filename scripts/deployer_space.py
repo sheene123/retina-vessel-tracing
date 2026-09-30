@@ -35,6 +35,9 @@ def main() -> int:
             shutil.copy(roue, site / roue.name)
         for fichier in ("index.html", "pont.py", "README.md"):
             shutil.copy(RACINE / "demo" / "web" / fichier, site / fichier)
+        exemples = RACINE / "demo" / "web" / "exemples"  # yeux malades à diagnostic connu (JSIEC)
+        if exemples.is_dir():
+            shutil.copytree(exemples, site / "exemples")
         if args.depuis_registre:
             # modèles d'une version du registre (déploiement continu)
             from huggingface_hub import hf_hub_download

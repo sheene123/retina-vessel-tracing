@@ -382,6 +382,7 @@ def evaluer(jeu: pd.DataFrame, z: np.ndarray, calibrage: dict, n: int = 2000) ->
             "ic_bas": float(np.quantile(aurocs, 0.025)),
             "ic_haut": float(np.quantile(aurocs, 0.975)),
             "detectes_des_possible": sensibilite,
+            "fausses_alertes": float(((p >= seuil) & (y == 0)).sum() / max((y == 0).sum(), 1)),
             "seuil_possible": seuil,
             "niveaux": niveaux,
         }
@@ -712,6 +713,11 @@ def ecrire_resultats(
                 "ic_bas": resultat[c]["ic_bas"],
                 "ic_haut": resultat[c]["ic_haut"],
                 "auroc_externe": externe_resultat[c].get("auroc"),
+                "atteints_externe": externe_resultat[c].get("atteints"),
+                "fausses_alertes": resultat[c]["fausses_alertes"],
+                "fausses_alertes_externe": (
+                    1 - externe_resultat[c]["specificite_peu_probable"] if "auroc" in externe_resultat[c] else None
+                ),
                 "detectes_des_possible": resultat[c]["detectes_des_possible"],
                 "niveaux": resultat[c]["niveaux"],
             }

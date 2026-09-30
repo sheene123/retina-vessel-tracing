@@ -1,0 +1,98 @@
+[
+ {
+  "fichier": "jsiec_01.jpg",
+  "diagnostic": "Œil sain",
+  "trouble": null,
+  "precision": "",
+  "categorie": "Normal",
+  "numero": 1
+ },
+ {
+  "fichier": "jsiec_02.jpg",
+  "diagnostic": "Œil sain",
+  "trouble": null,
+  "precision": "",
+  "categorie": "Normal",
+  "numero": 2
+ },
+ {
+  "fichier": "jsiec_03.jpg",
+  "diagnostic": "Rétinopathie diabétique",
+  "trouble": "diabete",
+  "precision": "stade modéré",
+  "categorie": "DR2",
+  "numero": 1
+ },
+ {
+  "fichier": "jsiec_04.jpg",
+  "diagnostic": "Rétinopathie diabétique",
+  "trouble": "diabete",
+  "precision": "stade sévère",
+  "categorie": "DR3",
+  "numero": 2
+ },
+ {
+  "fichier": "jsiec_05.jpg",
+  "diagnostic": "Glaucome",
+  "trouble": "glaucome",
+  "precision": "glaucome possible",
+  "categorie": "Possible glaucoma",
+  "numero": 1
+ },
+ {
+  "fichier": "jsiec_06.jpg",
+  "diagnostic": "Glaucome",
+  "trouble": "glaucome",
+  "precision": "glaucome possible",
+  "categorie": "Possible glaucoma",
+  "numero": 2
+ },
+ {
+  "fichier": "jsiec_07.jpg",
+  "diagnostic": "Maculopathie",
+  "trouble": "dmla",
+  "precision": "atteinte de la macula ; le réseau y cherche la DMLA, une de ses formes",
+  "categorie": "Maculopathy",
+  "numero": 1
+ },
+ {
+  "fichier": "jsiec_08.jpg",
+  "diagnostic": "Maculopathie",
+  "trouble": "dmla",
+  "precision": "atteinte de la macula ; le réseau y cherche la DMLA, une de ses formes",
+  "categorie": "Maculopathy",
+  "numero": 2
+ },
+ {
+  "fichier": "jsiec_09.jpg",
+  "diagnostic": "Rétinopathie hypertensive",
+  "trouble": "hypertension",
+  "precision": "forme sévère",
+  "categorie": "Severe hypertensive retinopathy",
+  "numero": 1
+ },
+ {
+  "fichier": "jsiec_10.jpg",
+  "diagnostic": "Rétinopathie hypertensive",
+  "trouble": "hypertension",
+  "precision": "forme sévère",
+  "categorie": "Severe hypertensive retinopathy",
+  "numero": 2
+ },
+ {
+  "fichier": "jsiec_11.jpg",
+  "diagnostic": "Myopie forte",
+  "trouble": "myopie",
+  "precision": "myopie pathologique",
+  "categorie": "Pathological myopia",
+  "numero": 1
+ },
+ {
+  "fichier": "jsiec_12.jpg",
+  "diagnostic": "Myopie forte",
+  "trouble": "myopie",
+  "precision": "myopie pathologique",
+  "categorie": "Pathological myopia",
+  "numero": 2
+ }
+]

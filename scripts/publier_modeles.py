@@ -147,17 +147,29 @@ def main() -> int:
         # 3. publication et étiquette de version
         resultats = json.loads((dossier / "troubles_resultats.json").read_text())
         externe = resultats.get("externe_jsiec", {})
-        tableau = "\n".join(
-            f"| {t['nom']} | {t['auroc']:.2f} [{t['ic_bas']:.2f} ; {t['ic_haut']:.2f}] | "
-            + (
-                f"{externe[c]['auroc']:.2f} [{externe[c]['ic_bas']:.2f} ; {externe[c]['ic_haut']:.2f}]"
-                if "auroc" in externe.get(c, {})
-                else "—"
+        noms_bases = {"odir": "ODIR-5K", "rfmid": "RFMiD", "smdg": "SMDG-19", "sjchoi86": "sjchoi86"}
+
+        def fr(v: float, n: int = 2) -> str:
+            return f"{v:.{n}f}".replace(".", ",")
+
+        lignes_tableau = []
+        for c, t in resultats["troubles"].items():
+            e = externe.get(c, {})
+            externe_texte = (
+                f"{fr(e['auroc'], 3)} [{fr(e['ic_bas'])} ; {fr(e['ic_haut'])}], {e['atteints']} cas"
+                if "auroc" in e
+                else "pas de cas"
             )
-            + " |"
-            for c, t in resultats["troubles"].items()
+            alertes = f"{round(100 * t['fausses_alertes'])} %" if "fausses_alertes" in t else "n/d"
+            lignes_tableau.append(
+                f"| {t['nom']} | {fr(t['auroc'])} [{fr(t['ic_bas'])} ; {fr(t['ic_haut'])}] | "
+                f"{round(100 * t['detectes_des_possible'])} % | {alertes} | {externe_texte} |"
+            )
+        tableau = "\n".join(lignes_tableau)
+        sources = ", ".join(
+            f"{noms_bases.get(s, s)} ({n:,})".replace(",", "\u202f")
+            for s, n in resultats.get("effectifs", {}).get("par_source", {}).items()
         )
-        sources = ", ".join(f"{s} ({n})" for s, n in resultats.get("effectifs", {}).get("par_source", {}).items())
         (dossier / "README.md").write_text(f"""---
 license: mit
 library_name: onnx
@@ -169,14 +181,21 @@ tags: [medical-imaging, retina, vessel-segmentation, fundus, onnx]
 Modèles de la démo [retina-vessel-tracing](https://huggingface.co/spaces/sheenee261/retina-vessel-tracing)
 (code : [sheene123/retina-vessel-tracing](https://github.com/sheene123/retina-vessel-tracing), commit `{commit}`).
 
-- `unet_drive.onnx` : U-Net de segmentation des vaisseaux, entraîné sur DRIVE. Dice {mesure["unet"]["dice"]:.3f}, AUC {mesure["unet"]["auc"]:.3f}
+- `unet_drive.onnx` : U-Net de segmentation des vaisseaux, entraîné sur DRIVE. Dice {fr(mesure["unet"]["dice"], 3)}, AUC {fr(mesure["unet"]["auc"], 3)}
   sur les 20 images de test (recalculés indépendamment avant publication).
 - `troubles.onnx` : {resultats.get("architecture", "efficientnet_b0").split(".")[0]}, 6 troubles de l'œil, entraîné sur {sources or "ODIR-5K"} ;
-  sorties calibrées par `troubles.json`. Test externe : JSIEC-1000, un hôpital jamais vu à l'entraînement.
+  sorties calibrées et seuils « possible » par trouble dans `troubles.json`.
 
-| Trouble | AUROC validation croisée [IC 95 %] | AUROC test externe JSIEC [IC 95 %] |
-|---|---|---|
+| Trouble | AUROC validation croisée [IC 95 %] | Atteints repérés dès « possible » | Fausses alertes (yeux sans le trouble signalés) | AUROC hôpital jamais vu (JSIEC) |
+|---|---|---|---|---|
 {tableau}
+
+**Comment lire ces chiffres.** La validation croisée porte sur des milliers d'yeux que le réseau n'avait pas vus, de
+gravité et de qualité variables : c'est la mesure la plus représentative. L'AUROC mesure le classement (1 si chaque œil
+atteint a un score plus haut que chaque œil sain) ; elle ne dit pas qu'il n'y a pas d'erreur : au seuil « possible »,
+il reste des cas manqués et des fausses alertes. Le test externe JSIEC-1000 (un hôpital jamais utilisé pour
+l'entraînement) est optimiste : ses photos montrent surtout des cas typiques, souvent avancés, et certains troubles y ont
+peu de cas, d'où des valeurs proches de 1 et des intervalles de confiance trop étroits.
 
 Démonstration de recherche, pas un dispositif médical.
 """)
