@@ -10,6 +10,7 @@ import time
 
 import numpy as np
 from PIL import Image
+from scipy import ndimage as ndi
 
 from vaisseaux.benchmark import CONFIGURATIONS
 from vaisseaux.biomarqueurs import MARQUEURS, mesurer
@@ -18,6 +19,7 @@ from vaisseaux.evaluation import auc_roc, evaluer_trace, metriques_binaires, ref
 from vaisseaux.graphe import carte_de_cout, plus_court_chemin
 from vaisseaux.pretraitement import normaliser_pour_reseau, pretraiter
 from vaisseaux.qualite import evaluer as evaluer_qualite
+from vaisseaux.zones import MESURES_ZONES, ZONE_B, ZONE_C, anneau, mesurer_zones, papille
 
 COTE_MAX = 800  # le calcul dans le navigateur est plus lent : on réduit les grandes images
 NOMS = {
@@ -119,6 +121,8 @@ def vue(nom: str, config: str) -> bytes:
         return _png(_etat["verite"].astype(float))
     if nom == "chaleur" and "chaleur" in _etat:
         return _png(_etat["chaleur"])
+    if nom == "zones" and "disque" in _etat:
+        return _png(_vue_zones())
     cartes = _cartes(config)
     if nom == "vert":
         return _png(cartes.vert)
@@ -234,6 +238,14 @@ SEUIL_UNET = 0.5
 FIABILITE: dict = {}  # rempli par la page depuis fiabilite.json (erreur du U-Net / écart entre patients)
 
 
+FIABILITE_ZONES: dict = {}  # accord U-Net / expert des mesures en zones (resultats/fiabilite_zones.json)
+
+
+def definir_fiabilite_zones(texte_json: str) -> None:
+    FIABILITE_ZONES.clear()
+    FIABILITE_ZONES.update(json.loads(texte_json).get("mesures", {}))
+
+
 def definir_fiabilite(texte_json: str) -> None:
     FIABILITE.clear()
     FIABILITE.update(json.loads(texte_json))
@@ -255,6 +267,7 @@ def recevoir_unet(octets) -> None:
     hauteur, largeur = _etat["masque"].shape
     logits = np.frombuffer(bytes(octets), dtype=np.float32).reshape(_etat["forme_unet"])[:hauteur, :largeur]
     proba = 1.0 / (1.0 + np.exp(-logits))
+    _etat["proba"] = proba
     _etat["segmentation"] = (proba >= SEUIL_UNET) & _etat["masque"]
 
 
@@ -278,7 +291,73 @@ def mesures() -> str:
         reponse["marqueurs"][k] = ligne
     if expert is not None:
         reponse["dice"] = metriques_binaires(_etat["segmentation"], _etat["verite"], masque)["dice"]
+    reponse |= _mesures_zones()
     return json.dumps(reponse)
+
+
+def _mesures_zones() -> dict:
+    """Mesures dans les zones autour de la papille, comparables d'une photo à l'autre. La marge
+    vient du seuil du U-Net (0,4 et 0,6 au lieu de 0,5) : une mesure qui bouge beaucoup avec ce
+    seuil dépend fortement de la segmentation."""
+    masque, segmentation = _etat["masque"], _etat["segmentation"]
+    disque = papille(_etat["rgb"], masque, segmentation)
+    _etat["disque"] = disque
+    valeur = mesurer_zones(segmentation, disque)
+    variantes = [mesurer_zones((_etat["proba"] >= s) & masque, disque) for s in (0.4, 0.6)]
+    expert = mesurer_zones(_etat["verite"] & masque, disque) if "verite" in _etat else None
+    zones = {}
+    for k in MESURES_ZONES:
+        # la marge englobe la valeur elle-même et les deux variantes de seuil
+        bornes = [v[k] for v in [*variantes, valeur] if np.isfinite(v[k])]
+        zones[k] = {
+            "valeur": _nombre(valeur[k]),
+            "bas": _nombre(min(bornes)) if bornes else None,
+            "haut": _nombre(max(bornes)) if bornes else None,
+            "expert": _nombre(expert[k]) if expert is not None else None,
+            "fiabilite": FIABILITE_ZONES.get(k),
+        }
+    return {
+        "zones": zones,
+        "papille": {
+            "diametre_px": round(disque["diametre"], 1),
+            "estime": disque["diametre_estime"],
+            "champ_dp": round(disque["champ_diametre"] / disque["diametre"], 2),
+        },
+    }
+
+
+def _vue_zones() -> np.ndarray:
+    """Papille (vert), zone B (jaune), limite de la zone C (cyan) et vaisseaux de la zone C colorés
+    selon leur calibre, du bleu (fins) au rouge (gros), sur l'image assombrie."""
+    from PIL import ImageDraw
+    from skimage.morphology import skeletonize
+
+    rgb, disque, segmentation = _etat["rgb"], _etat["disque"], _etat["segmentation"]
+    fond = (rgb.astype(np.float32) * 0.45).astype(np.uint8)
+    zone_c = anneau(segmentation.shape, disque, ZONE_C)
+    squelette = skeletonize(segmentation & zone_c)
+    largeur = 2 * ndi.distance_transform_edt(segmentation)[squelette] - 1
+    t = np.clip(largeur / max(np.percentile(largeur, 95), 1.0), 0, 1) if largeur.size else largeur
+    couleurs = np.stack([255 * t, 80 + 60 * (1 - np.abs(2 * t - 1)), 255 * (1 - t)], axis=-1).astype(np.uint8)
+    epais = ndi.binary_dilation(squelette, iterations=1)
+    lignes, colonnes = np.nonzero(squelette)
+    image = fond.copy()
+    image[epais] = (200, 200, 200)
+    image[lignes, colonnes] = couleurs
+    dessin_image = Image.fromarray(image)
+    dessin = ImageDraw.Draw(dessin_image)
+    cx, cy, d = disque["colonne"], disque["ligne"], disque["diametre"]
+    epaisseur = max(2, round(min(rgb.shape[:2]) / 250))
+    for rayon, couleur in (
+        (0.5, (80, 220, 80)),
+        (ZONE_B[0], (240, 220, 60)),
+        (ZONE_B[1], (240, 220, 60)),
+        (ZONE_C[1], (80, 210, 230)),
+    ):
+        dessin.ellipse(
+            [cx - rayon * d, cy - rayon * d, cx + rayon * d, cy + rayon * d], outline=couleur, width=epaisseur
+        )
+    return np.asarray(dessin_image)
 
 
 # ---------------------------------------------------------------- troubles de l'œil

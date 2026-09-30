@@ -35,6 +35,9 @@ def main() -> int:
             shutil.copy(roue, site / roue.name)
         for fichier in ("index.html", "pont.py", "README.md"):
             shutil.copy(RACINE / "demo" / "web" / fichier, site / fichier)
+        # fiabilité des mesures en zones (calculée sans entraînement, versionnée)
+        if (RACINE / "resultats" / "fiabilite_zones.json").exists():
+            shutil.copy(RACINE / "resultats" / "fiabilite_zones.json", site / "fiabilite_zones.json")
         exemples = RACINE / "demo" / "web" / "exemples"  # yeux malades à diagnostic connu (JSIEC)
         if exemples.is_dir():
             shutil.copytree(exemples, site / "exemples")

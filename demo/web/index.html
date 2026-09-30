@@ -345,7 +345,14 @@ const CONFIGS = {
   clahe_median: ["CLAHE + filtre médian", "Retire les points isolés en conservant les bords."],
   clahe_bilateral: ["CLAHE + filtre bilatéral", "Lisse en préservant les contours, mais crée parfois des raccourcis entre vaisseaux voisins."],
 };
-const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Contraste amélioré", vaisseaux: "Ce que voit le programme", segmentation: "Segmentation U-Net", verite: "Annotation de l'expert", chaleur: "Zones regardées par le réseau" };
+const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Contraste amélioré", vaisseaux: "Ce que voit le programme", segmentation: "Segmentation U-Net", verite: "Annotation de l'expert", chaleur: "Zones regardées par le réseau", zones: "Zones de mesure" };
+// mesures dans les zones autour de la papille (vaisseaux.zones) : comparables d'une photo à l'autre
+const MESURES_ZONES = [
+  ["calibre_zone_b_um", "Calibre des gros vaisseaux (zone B)", "largeur moyenne des 6 plus gros vaisseaux près de la papille, en µm estimés (1 diamètre de papille ≈ 1 800 µm)", (v) => `${fr(v, 0)} µm`],
+  ["tortuosite_zone_c", "Tortuosité (zone C)", "longs segments, pondérés par leur longueur (1 = droit)", (v) => fr(v, 3)],
+  ["densite_zone_c", "Densité vasculaire (zone C)", "part de l'anneau couverte par les vaisseaux", (v) => `${fr(100 * v, 1)} %`],
+  ["longueur_zone_c", "Densité de longueur (zone C)", "longueur des vaisseaux par surface, par diamètre de papille", (v) => fr(v, 2)],
+];
 const MARQUEURS = [
   ["densite", "Densité vasculaire", "part de la rétine couverte par les vaisseaux", (v) => `${fr(100 * v, 1)} %`],
   ["densite_longueur", "Densité de longueur", "longueur totale des vaisseaux rapportée à la surface", (v) => `${fr(100 * v, 2)} %`],
@@ -450,6 +457,10 @@ async function demarrer() {
     try {
       appeler("definir_fiabilite", await (await fetch("fiabilite.json")).text());
     } catch { /* sans fichier de fiabilité, la colonne reste vide */ }
+    try {
+      const reponse = await fetch("fiabilite_zones.json");
+      if (reponse.ok) appeler("definir_fiabilite_zones", await reponse.text());
+    } catch { /* sans fichier de fiabilité des zones, la colonne reste vide */ }
     voile("Chargement d'une image d'exemple", "Image DRIVE et annotation de l'expert", 3);
     etat.pret = true;
     // une image choisie pendant le chargement passe avant l'exemple
@@ -609,6 +620,10 @@ function majVues() {
     if (b.dataset.vue === "verite") {
       b.disabled = !etat.verite;
       b.title = etat.verite ? "" : "Disponible sur les images d'exemple annotées";
+    }
+    if (b.dataset.vue === "zones") {
+      b.disabled = !etat.segmentation;
+      b.title = etat.segmentation ? "" : "Cliquez d'abord « Mesurer les vaisseaux »";
     }
     if (b.dataset.vue === "chaleur") {
       b.disabled = !etat.chaleur;
@@ -888,7 +903,73 @@ function afficherMesures(r) {
   html += "</tbody></table></div>";
   if (r.dice != null) html += `<p class="aide">Dice de la segmentation U-Net sur cette image : ${fr(r.dice, 3)}. La vue « Segmentation U-Net » montre ce que le réseau a détecté.</p>`;
   else html += '<p class="aide">Le U-Net a été entraîné sur les images DRIVE : sur un autre appareil photo, la segmentation peut être moins bonne. Vérifiez-la avec la vue « Segmentation U-Net ».</p>';
+  html += tableauZones(r);
   zone.innerHTML = html;
+  etat.mesures = r;
+  $("exporterMesures")?.addEventListener("click", exporterMesures);
+}
+
+function badgeZones(f) {
+  if (!f) return "n/d";
+  const rho = f.correlation_patients;
+  const [mot, classe] = rho >= 0.75 ? ["fiable", "fiable"] : rho >= 0.5 ? ["approximative", "approximative"] : ["peu fiable", "peu"];
+  const titre = `Classe les yeux comme l'expert : corrélation ${fr(rho, 2)} sur ${f.images} images annotées (DRIVE, HRF, LES-AV) ; écart typique ${fr(100 * f.ecart_relatif_median, 0)} %`;
+  return `<span class="badge ${classe}" title="${echapper(titre)}">${mot} (${fr(rho, 2)})</span>`;
+}
+
+function tableauZones(r) {
+  if (!r.zones) return "";
+  const expert = MESURES_ZONES.some(([k]) => r.zones[k]?.expert != null);
+  let html = `<h3 class="sous-titre">Mesures autour de la papille</h3>
+    <p class="aide">Mesurées dans des anneaux autour de la papille (zones B et C, vue « Zones de mesure ») et exprimées sans
+    unité de pixel, comme dans les logiciels de recherche (SIVA, VAMPIRE, AutoMorph) : elles ne dépendent ni de la résolution
+    ni du cadrage. Elles dépendent encore de l'appareil photo, à travers la segmentation (voir plus bas). La marge montre de
+    combien la mesure bouge si le U-Net est un peu plus ou un peu moins strict.</p>
+    <div class="tableau"><table class="mesures"><thead><tr><th>Mesure</th><th>Valeur (marge)</th>
+    ${expert ? "<th>Expert</th>" : ""}<th>Fiabilité face à l'expert</th></tr></thead><tbody>`;
+  for (const [cle, nom, description, format] of MESURES_ZONES) {
+    const m = r.zones[cle];
+    const valeur = m.valeur == null ? "n/d" : format(m.valeur);
+    const marge = m.bas != null && m.haut != null ? `<small>de ${format(m.bas)} à ${format(m.haut)}</small>` : "";
+    html += `<tr><td>${echapper(nom)}<small>${echapper(description)}</small></td><td>${valeur}${marge}</td>
+      ${expert ? `<td>${m.expert == null ? "n/d" : format(m.expert)}</td>` : ""}<td>${badgeZones(m.fiabilite)}</td></tr>`;
+  }
+  html += "</tbody></table></div>";
+  const p = r.papille;
+  html += `<p class="aide">Papille : ${p.estime
+    ? "<strong>diamètre non mesurable sur cette photo</strong>, valeur type utilisée (un septième du champ de vue) : les valeurs en µm sont moins sûres."
+    : `diamètre mesuré automatiquement (${fr(p.diametre_px, 0)} pixels, soit ${fr(p.champ_dp, 1)} diamètres de papille dans le champ de vue).`}
+    Le calibre en µm dépend aussi de ce diamètre, mesuré sans vérification possible face à un expert (pas d'annotation de
+    papille dans les bases utilisées) : à lire avec prudence. Pas de comparaison à des « yeux sains » : mesurés avec la même
+    chaîne, les yeux sains d'autres appareils (RFMiD, JSIEC) donnent des valeurs nettement plus basses que ceux de DRIVE, car le
+    U-Net, entraîné sur DRIVE, ne dessine pas les vaisseaux de la même façon ; une telle comparaison mesurerait surtout
+    l'appareil. Le rapport artères / veines
+    (AVR) n'est pas proposé : sans modèle entraîné pour distinguer artères et veines, il n'est pas fiable (voir la documentation).</p>
+    <button type="button" id="exporterMesures" class="lien-bouton">Exporter les mesures (CSV)</button>`;
+  return html;
+}
+
+function exporterMesures() {
+  const r = etat.mesures;
+  if (!r) return;
+  const lignes = [["groupe", "mesure", "valeur", "expert", "marge_basse", "marge_haute", "fiabilite_correlation"]];
+  for (const [cle, nom] of MARQUEURS) {
+    const m = r.marqueurs[cle];
+    lignes.push(["image entiere", nom, m.valeur, m.expert, "", "", m.fiabilite?.correlation_patients]);
+  }
+  for (const [cle, nom] of MESURES_ZONES) {
+    const m = r.zones?.[cle];
+    if (m) lignes.push(["zones papille", nom, m.valeur, m.expert, m.bas, m.haut, m.fiabilite?.correlation_patients]);
+  }
+  if (r.papille) lignes.push(["papille", r.papille.estime ? "diametre (pixels, valeur type)" : "diametre (pixels, mesure)", r.papille.diametre_px, "", "", "", ""]);
+  // séparateur « ; » et virgule décimale : le CSV s'ouvre directement dans un tableur en français
+  const cellule = (v) => (v == null ? "" : typeof v === "number" ? String(v).replace(".", ",") : `"${String(v).replaceAll('"', '""')}"`);
+  const csv = lignes.map((l) => l.map(cellule).join(";")).join("\n");
+  const lien = document.createElement("a");
+  lien.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
+  lien.download = `mesures_vaisseaux_${String(etat.source || "image").replace(/[^\w.-]+/g, "_")}.csv`;
+  lien.click();
+  URL.revokeObjectURL(lien.href);
 }
 
 function preparerOrt() {

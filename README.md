@@ -260,7 +260,8 @@ resultats/           résultats versionnés du dernier benchmark
 - [x] Modèle ONNX des six troubles de l'œil, probabilités calibrées et panneau simplifié dans la démo
 - [x] Troubles entraînés sur quatre bases dédoublonnées et testés sur un hôpital jamais vu (JSIEC), seuils adaptés aux troubles rares
 - [x] Professeur RETFound pour le glaucome (distillation), cartes de chaleur, contrôle de qualité de la photo, yeux malades à diagnostic connu (v0.3.0)
-- [ ] Améliorer la précision des marqueurs (plus de données, marqueurs artère/veine) avant tout
+- [x] Mesures dans les zones autour de la papille, en diamètres de papille, avec marge, fiabilité face à l'expert (107 images) et export CSV ; AVR sans apprentissage testé et écarté ([docs/mesures_zones.md](docs/mesures_zones.md))
+- [ ] Modèle artères / veines entraîné (DRIVE_AV, HRF-AV, LES-AV) pour l'AVR, et U-Net multi-appareils ; avant tout
       usage lié au risque cardiovasculaire
 - [ ] Prétraitement : réglage adaptatif du débruitage, correction d'illumination
 - [ ] Coût du tracé tiré du U-Net

@@ -1,0 +1,31 @@
+{
+ "mesures": {
+  "calibre_zone_b": {
+   "correlation_patients": 0.792867956946257,
+   "ecart_relatif_median": 0.18886091442110536,
+   "images": 106
+  },
+  "calibre_zone_b_um": {
+   "correlation_patients": 0.792867956946257,
+   "ecart_relatif_median": 0.18886091442110536,
+   "images": 106
+  },
+  "tortuosite_zone_c": {
+   "correlation_patients": 0.6316396705040683,
+   "ecart_relatif_median": 0.008998922339202707,
+   "images": 106
+  },
+  "densite_zone_c": {
+   "correlation_patients": 0.6328591861125805,
+   "ecart_relatif_median": 0.1859998616587121,
+   "images": 107
+  },
+  "longueur_zone_c": {
+   "correlation_patients": 0.8287584004388799,
+   "ecart_relatif_median": 0.13488861603227495,
+   "images": 107
+  }
+ },
+ "diametre_papille_par_defaut": 5,
+ "images": 107
+}
