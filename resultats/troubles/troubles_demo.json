@@ -12,151 +12,169 @@
  "troubles": {
   "diabete": {
    "nom": "Rétinopathie diabétique",
-   "a": 0.7807380557060242,
-   "b": -1.1440047025680542,
+   "a": 0.8304927945137024,
+   "b": -1.1554393768310547,
    "seuil_possible": 0.2,
-   "auroc": 0.8964879221871596,
-   "ic_bas": 0.8882830593116064,
-   "ic_haut": 0.9051422487312074,
-   "auroc_externe": 0.9423104762823915,
-   "detectes_des_possible": 0.8272340425531914,
+   "auroc": 0.8947289477992356,
+   "ic_bas": 0.8864815354139456,
+   "ic_haut": 0.9033948250867395,
+   "auroc_externe": 0.9465810934710226,
+   "atteints_externe": 106,
+   "fausses_alertes": 0.22393207747413107,
+   "fausses_alertes_externe": 0.12020460358056262,
+   "detectes_des_possible": 0.823404255319149,
    "niveaux": {
     "peu_probable": {
-     "yeux": 6241,
-     "part_atteints": 0.06505367729530524
+     "yeux": 6265,
+     "part_atteints": 0.06624102154828412
     },
     "possible": {
-     "yeux": 2025,
-     "part_atteints": 0.2992592592592593
+     "yeux": 1988,
+     "part_atteints": 0.306841046277666
     },
     "probable": {
-     "yeux": 1622,
-     "part_atteints": 0.8249075215782984
+     "yeux": 1635,
+     "part_atteints": 0.8103975535168195
     }
    }
   },
   "glaucome": {
    "nom": "Glaucome",
-   "a": 0.730917751789093,
-   "b": -1.6399097442626953,
-   "seuil_possible": 0.15989834070205688,
-   "auroc": 0.8972490892329839,
-   "ic_bas": 0.8901191935134677,
-   "ic_haut": 0.904276487265939,
-   "auroc_externe": 0.9969230769230769,
+   "a": 0.96858149766922,
+   "b": -1.1044538021087646,
+   "seuil_possible": 0.18136698007583618,
+   "auroc": 0.9057402460681604,
+   "ic_bas": 0.899000955993396,
+   "ic_haut": 0.9124144857500791,
+   "auroc_externe": 0.997920997920998,
+   "atteints_externe": 13,
+   "fausses_alertes": 0.15576704083292664,
+   "fausses_alertes_externe": 0.08648648648648649,
    "detectes_des_possible": 0.7998955067920586,
    "niveaux": {
     "peu_probable": {
-     "yeux": 10576,
-     "part_atteints": 0.03621406959152799
+     "yeux": 10762,
+     "part_atteints": 0.035588180635569594
     },
     "possible": {
-     "yeux": 2463,
-     "part_atteints": 0.2976045473000406
+     "yeux": 2223,
+     "part_atteints": 0.3175888439046334
     },
     "probable": {
-     "yeux": 1169,
-     "part_atteints": 0.6826347305389222
+     "yeux": 1223,
+     "part_atteints": 0.6745707277187244
     }
    }
   },
   "cataracte": {
    "nom": "Cataracte",
-   "a": 0.6949805617332458,
-   "b": -1.9100854396820068,
+   "a": 0.7246447801589966,
+   "b": -2.1859562397003174,
    "seuil_possible": 0.2,
-   "auroc": 0.9850174139259184,
-   "ic_bas": 0.9790520893177579,
-   "ic_haut": 0.9897972581343454,
+   "auroc": 0.9844093409582501,
+   "ic_bas": 0.9787294765874234,
+   "ic_haut": 0.9892158752942831,
    "auroc_externe": null,
-   "detectes_des_possible": 0.8553615960099751,
+   "atteints_externe": 0,
+   "fausses_alertes": 0.01832460732984293,
+   "fausses_alertes_externe": null,
+   "detectes_des_possible": 0.8503740648379052,
    "niveaux": {
     "peu_probable": {
-     "yeux": 9064,
-     "part_atteints": 0.006398940864960283
+     "yeux": 9060,
+     "part_atteints": 0.006622516556291391
     },
     "possible": {
-     "yeux": 152,
-     "part_atteints": 0.375
+     "yeux": 143,
+     "part_atteints": 0.2937062937062937
     },
     "probable": {
-     "yeux": 353,
-     "part_atteints": 0.8101983002832861
+     "yeux": 366,
+     "part_atteints": 0.8169398907103825
     }
    }
   },
   "dmla": {
    "nom": "DMLA (dégénérescence maculaire liée à l'âge)",
-   "a": 0.6925886273384094,
-   "b": -2.0973665714263916,
-   "seuil_possible": 0.08357176929712296,
-   "auroc": 0.9403804871005006,
-   "ic_bas": 0.9268703262146563,
-   "ic_haut": 0.9531841876439903,
-   "auroc_externe": 0.9530011325028312,
+   "a": 0.6987151503562927,
+   "b": -2.2247891426086426,
+   "seuil_possible": 0.07915972173213959,
+   "auroc": 0.9396243261455526,
+   "ic_bas": 0.9261204944203268,
+   "ic_haut": 0.9528414993929442,
+   "auroc_externe": 0.9659024823237734,
+   "atteints_externe": 74,
+   "fausses_alertes": 0.0646900269541779,
+   "fausses_alertes_externe": 0.16421291053227638,
    "detectes_des_possible": 0.7991071428571429,
    "niveaux": {
     "peu_probable": {
-     "yeux": 8767,
-     "part_atteints": 0.010265769362381659
+     "yeux": 8765,
+     "part_atteints": 0.01026811180832858
     },
     "possible": {
-     "yeux": 672,
-     "part_atteints": 0.2261904761904762
+     "yeux": 675,
+     "part_atteints": 0.21777777777777776
     },
     "probable": {
-     "yeux": 284,
-     "part_atteints": 0.7253521126760564
+     "yeux": 283,
+     "part_atteints": 0.7455830388692579
     }
    }
   },
   "hypertension": {
    "nom": "Rétinopathie hypertensive",
-   "a": 0.5696150660514832,
-   "b": -1.9477077722549438,
+   "a": 0.6400794982910156,
+   "b": -2.019303798675537,
    "seuil_possible": 0.03,
-   "auroc": 0.8591954621677252,
-   "ic_bas": 0.8290854442440441,
-   "ic_haut": 0.8879581764446797,
-   "auroc_externe": 0.979465541490858,
-   "detectes_des_possible": 0.6632124352331606,
+   "auroc": 0.8633489804781969,
+   "ic_bas": 0.8340447720579831,
+   "ic_haut": 0.8916754487129083,
+   "auroc_externe": 0.9452180028129396,
+   "atteints_externe": 15,
+   "fausses_alertes": 0.151149603051861,
+   "fausses_alertes_externe": 0.03691983122362874,
+   "detectes_des_possible": 0.6839378238341969,
    "niveaux": {
     "peu_probable": {
-     "yeux": 8240,
-     "part_atteints": 0.007888349514563107
+     "yeux": 8294,
+     "part_atteints": 0.007354714251265975
     },
     "possible": {
-     "yeux": 1640,
-     "part_atteints": 0.07378048780487804
+     "yeux": 1587,
+     "part_atteints": 0.07939508506616257
     },
     "probable": {
-     "yeux": 12,
-     "part_atteints": 0.5833333333333334
+     "yeux": 11,
+     "part_atteints": 0.5454545454545454
     }
    }
   },
   "myopie": {
    "nom": "Myopie forte",
-   "a": 0.8033658266067505,
-   "b": -1.5756099224090576,
+   "a": 0.8261590003967285,
+   "b": -1.8653076887130737,
    "seuil_possible": 0.2,
-   "auroc": 0.9964582862532285,
-   "ic_bas": 0.9950033625097963,
-   "ic_haut": 0.9977338270006778,
-   "auroc_externe": 0.9994351650125071,
-   "detectes_des_possible": 0.9219858156028369,
+   "auroc": 0.9954545126215958,
+   "ic_bas": 0.9933679515023934,
+   "ic_haut": 0.9972556100407528,
+   "auroc_externe": 0.9995360284031308,
+   "atteints_externe": 54,
+   "fausses_alertes": 0.011348756001745963,
+   "fausses_alertes_externe": 0.0326797385620915,
+   "detectes_des_possible": 0.91725768321513,
    "niveaux": {
     "peu_probable": {
-     "yeux": 9108,
-     "part_atteints": 0.0036231884057971015
+     "yeux": 9095,
+     "part_atteints": 0.0038482682792743265
     },
     "possible": {
-     "yeux": 73,
-     "part_atteints": 0.3150684931506849
+     "yeux": 89,
+     "part_atteints": 0.3707865168539326
     },
     "probable": {
-     "yeux": 406,
-     "part_atteints": 0.9039408866995073
+     "yeux": 403,
+     "part_atteints": 0.8808933002481389
     }
    }
   }

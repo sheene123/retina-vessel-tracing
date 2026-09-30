@@ -72,7 +72,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--version", required=True)
     parser.add_argument("--repo", default="sheenee261/retina-vessel-tracing")
-    parser.add_argument("--forcer", action="store_true")
+    parser.add_argument("--forcer", action="store_true", help="publie malgré une régression (décision humaine)")
+    parser.add_argument(
+        "--note", help="décision et justification, écrites dans la fiche du modèle (obligatoire avec --forcer)"
+    )
     args = parser.parse_args()
 
     manquants = [f for f in FICHIERS if not (RACINE / f).exists()]
@@ -140,11 +143,22 @@ def main() -> int:
                     f"{cle} : champion {champion.get(cle, float('nan')):.3f}, challenger {valeur:.3f} ({ecart:+.3f}) {'OK' if ok else 'RÉGRESSION'}"
                 )
         print("Comparaison champion / challenger :\n" + "\n".join(f"- {ligne}" for ligne in lignes))
+        if not accepte and args.forcer and not args.note:
+            print("--forcer sans --note : la décision doit être justifiée par écrit", file=sys.stderr)
+            return 2
         if not accepte and not args.forcer:
             print("régression face à la version en production : publication refusée", file=sys.stderr)
             return 2
 
         # 3. publication et étiquette de version
+        decision = ""
+        if not accepte:
+            decision = (
+                "## Décision de publication\n\nLa comparaison automatique avec la version en production a relevé une "
+                "régression :\n\n"
+                + "\n".join(f"- {ligne}" for ligne in lignes if "RÉGRESSION" in ligne)
+                + f"\n\nPublication décidée malgré tout : {args.note}\n\n"
+            )
         resultats = json.loads((dossier / "troubles_resultats.json").read_text())
         externe = resultats.get("externe_jsiec", {})
         noms_bases = {"odir": "ODIR-5K", "rfmid": "RFMiD", "smdg": "SMDG-19", "sjchoi86": "sjchoi86"}
@@ -197,7 +211,7 @@ il reste des cas manqués et des fausses alertes. Le test externe JSIEC-1000 (un
 l'entraînement) est optimiste : ses photos montrent surtout des cas typiques, souvent avancés, et certains troubles y ont
 peu de cas, d'où des valeurs proches de 1 et des intervalles de confiance trop étroits.
 
-Démonstration de recherche, pas un dispositif médical.
+{decision}Démonstration de recherche, pas un dispositif médical.
 """)
         (dossier / "validation.json").unlink()
         info = api.create_repo(args.repo, repo_type="model", exist_ok=True)
