@@ -423,6 +423,27 @@ def figure(resultat: dict, chemin: Path, externe: dict | None = None) -> None:
     plt.close(fig)
 
 
+def _avec_cartes(modele):
+    """Enveloppe pour l'export : en plus des logits, les cartes d'activation de classe (CAM) de
+    chaque trouble, calculées à partir des cartes de caractéristiques et des poids de la couche
+    finale. La moyenne de chaque carte redonne exactement le logit : la carte montre quelles zones
+    de l'image font monter ou baisser le score, sans approximation."""
+    import torch
+
+    class AvecCartes(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.modele = modele
+
+        def forward(self, x):
+            caracteristiques = self.modele.forward_features(x)
+            tete = self.modele.classifier
+            cartes = torch.einsum("bkhw,ck->bchw", caracteristiques, tete.weight) + tete.bias[None, :, None, None]
+            return cartes.mean(dim=(2, 3)), cartes
+
+    return AvecCartes()
+
+
 def exporter(modele, chemin: Path, exemples: np.ndarray) -> float:
     """Export ONNX ; la parité est vérifiée sur de vraies images (un bruit aléatoire, hors
     distribution, amplifie des écarts numériques sans intérêt)."""
@@ -431,12 +452,13 @@ def exporter(modele, chemin: Path, exemples: np.ndarray) -> float:
 
     modele = modele.float().cpu().to(memory_format=torch.contiguous_format).eval()
     x = torch.from_numpy(exemples)
+    avec_cartes = hasattr(modele, "forward_features") and hasattr(modele, "classifier")
     torch.onnx.export(
-        modele,
+        _avec_cartes(modele) if avec_cartes else modele,
         (x[:1],),
         str(chemin),
         input_names=["image"],
-        output_names=["logits"],
+        output_names=["logits", "cartes"] if avec_cartes else ["logits"],
         dynamo=True,
         external_data=False,
         verbose=False,

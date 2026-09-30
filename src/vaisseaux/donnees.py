@@ -72,18 +72,36 @@ MOYENNE_IMAGENET = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 ECART_IMAGENET = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
+def cadre_carre(rgb: np.ndarray) -> tuple[int, int, int, int, int, int, int]:
+    """Cadre utilisé par `carre_fond_oeil` : (haut, gauche, hauteur, largeur) du disque dans
+    l'image, côté du carré et décalages (vertical, horizontal) du disque dans le carré."""
+    masque = estimer_masque_fov(rgb, marge=0)
+    lignes, colonnes = np.nonzero(masque)
+    haut, gauche, h, w = 0, 0, rgb.shape[0], rgb.shape[1]
+    if lignes.size:
+        haut, gauche = int(lignes.min()), int(colonnes.min())
+        h, w = int(lignes.max()) + 1 - haut, int(colonnes.max()) + 1 - gauche
+    cote = max(h, w)
+    return haut, gauche, h, w, cote, (cote - h) // 2, (cote - w) // 2
+
+
 def carre_fond_oeil(rgb: np.ndarray, taille: int = 384) -> np.ndarray:
     """Recadre sur le disque du fond d'œil, complète en carré noir et redimensionne : même
     présentation que les images prétraitées d'ODIR-5K sur lesquelles le réseau est entraîné."""
-    masque = estimer_masque_fov(rgb, marge=0)
-    lignes, colonnes = np.nonzero(masque)
-    if lignes.size:
-        rgb = rgb[lignes.min() : lignes.max() + 1, colonnes.min() : colonnes.max() + 1]
-    h, w = rgb.shape[:2]
-    cote = max(h, w)
+    haut, gauche, h, w, cote, dh, dw = cadre_carre(rgb)
     carre = np.zeros((cote, cote, 3), dtype=np.uint8)
-    carre[(cote - h) // 2 : (cote - h) // 2 + h, (cote - w) // 2 : (cote - w) // 2 + w] = rgb[..., :3]
+    carre[dh : dh + h, dw : dw + w] = rgb[haut : haut + h, gauche : gauche + w, :3]
     return np.asarray(Image.fromarray(carre).resize((taille, taille), Image.Resampling.BILINEAR))
+
+
+def carte_sur_image(carte: np.ndarray, forme: tuple[int, int], cadre: tuple[int, ...]) -> np.ndarray:
+    """Replace une carte calculée sur le carré (par exemple 12 × 12) dans l'image d'origine :
+    agrandissement lissé au côté du carré, retrait des bandes noires, placement dans le cadre."""
+    haut, gauche, h, w, cote, dh, dw = cadre
+    grande = np.asarray(Image.fromarray(carte.astype(np.float32)).resize((cote, cote), Image.Resampling.BICUBIC))
+    sortie = np.zeros(forme, dtype=np.float32)
+    sortie[haut : haut + h, gauche : gauche + w] = grande[dh : dh + h, dw : dw + w]
+    return sortie
 
 
 def localiser_papille(carre: np.ndarray) -> tuple[int, int]:

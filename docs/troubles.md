@@ -115,6 +115,20 @@ seuil adapté (et 94 % des yeux sans ce trouble restent « peu probable »).
 
 Les pourcentages eux-mêmes restent calibrés ; seul le mot affiché change.
 
+## Cartes de chaleur et contrôle de qualité
+
+- **« Voir les zones »** : le modèle ONNX exporte, en plus des scores, une carte 12 × 12 par trouble
+  (carte d'activation de classe, CAM) : la couche finale d'EfficientNet est une moyenne des zones de
+  l'image suivie d'une combinaison linéaire, donc la carte est exacte, sa moyenne redonne le score.
+  La démo la superpose à l'image en rouge et jaune. Pour le glaucome, elle se concentre sur la
+  papille, comme l'examen d'un ophtalmologiste ; ce n'est pas pour autant le contour d'une lésion.
+- **Qualité de l'image** ([qualite.py](../src/vaisseaux/qualite.py)) : netteté (laplacien du canal
+  vert), luminosité, surexposition et contraste. Sur JSIEC, la netteté sépare les 159 photos classées
+  « fond d'œil flou » par les ophtalmologistes des 841 autres avec une AUROC de 0,996. Seuils :
+  « image floue » sous 0,18 (81 % des photos floues repérées, 0,4 % des photos nettes signalées à
+  tort), « un peu floue » sous 0,25 (96 % et 4 %). La démo avertit quand la qualité est moyenne ou
+  insuffisante, au chargement et au-dessus des résultats.
+
 ## Reproduire
 
 ```bash

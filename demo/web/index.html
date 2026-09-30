@@ -64,6 +64,9 @@
   .lien-bouton { background: none; border: none; padding: 4px 0; margin-top: 4px; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; font-size: 0.88rem; }
   .choix-malades { grid-template-columns: repeat(2, 1fr); margin-top: 6px; }
   .sous-titre { font-size: 0.92rem; margin: 18px 0 0; }
+  .qualite { border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; font-size: 0.9rem; background: #fff4e5; border: 1px solid #f5c26b; }
+  .qualite.insuffisante { background: #fdecea; border-color: #f1a9a0; }
+  .voir-zones { font-size: 0.8rem; padding: 2px 8px; margin-left: 8px; }
   .etiquette { border: 1px solid var(--bord, #d0d7de); border-left: 4px solid var(--accent); border-radius: 8px;
     padding: 10px 12px; margin: 0 0 12px; font-size: 0.92rem; line-height: 1.45; }
   .etiquette small { color: var(--texte-2); }
@@ -342,7 +345,7 @@ const CONFIGS = {
   clahe_median: ["CLAHE + filtre médian", "Retire les points isolés en conservant les bords."],
   clahe_bilateral: ["CLAHE + filtre bilatéral", "Lisse en préservant les contours, mais crée parfois des raccourcis entre vaisseaux voisins."],
 };
-const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Contraste amélioré", vaisseaux: "Ce que voit le programme", segmentation: "Segmentation U-Net", verite: "Annotation de l'expert" };
+const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Contraste amélioré", vaisseaux: "Ce que voit le programme", segmentation: "Segmentation U-Net", verite: "Annotation de l'expert", chaleur: "Zones regardées par le réseau" };
 const MARQUEURS = [
   ["densite", "Densité vasculaire", "part de la rétine couverte par les vaisseaux", (v) => `${fr(100 * v, 1)} %`],
   ["densite_longueur", "Densité de longueur", "longueur totale des vaisseaux rapportée à la surface", (v) => `${fr(100 * v, 2)} %`],
@@ -360,7 +363,7 @@ const CONSIGNES = ["", "Cliquez le point de départ sur un vaisseau", "Cliquez l
 
 const $ = (id) => document.getElementById(id);
 const toile = $("toile"), ctx = toile.getContext("2d"), survol = $("survol"), sctx = survol.getContext("2d");
-const etat = { etiquette: null, fichierEnAttente: null, pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
+const etat = { qualite: null, chaleur: false, cartesTroubles: null, etiquette: null, fichierEnAttente: null, pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
 let sessionUnet = null, sessionTroubles = null, configTroubles = null;
 const DESCRIPTIONS_TROUBLES = {
   diabete: "atteinte des petits vaisseaux due au diabète : petites hémorragies, dépôts jaunâtres",
@@ -527,10 +530,35 @@ async function chargerFichier(fichier) {
   $("fichier").value = "";
 }
 
+// qualité de la photo (vaisseaux.qualite) : un avertissement si elle peut fausser les résultats
+function messageQualite() {
+  const q = etat.qualite;
+  if (!q || q.niveau === "bonne") return "";
+  const problemes = q.problemes.join(", ");
+  return q.niveau === "insuffisante"
+    ? `<p class="qualite insuffisante"><strong>Qualité de l'image insuffisante</strong> (${echapper(problemes)}) : les
+      tracés, les mesures et les signes de maladies seront peu fiables. Utilisez si possible une photo plus nette.</p>`
+    : `<p class="qualite"><strong>Qualité de l'image moyenne</strong> (${echapper(problemes)}) : les résultats sont à
+      interpréter avec prudence.</p>`;
+}
+
+async function voirZones(cle) {
+  const j = configTroubles.ordre.indexOf(cle);
+  const { data, cote } = etat.cartesTroubles;
+  await occuper("Calcul de la carte", async () => {
+    appeler("definir_carte", new Uint8Array(data.buffer, data.byteOffset, data.byteLength), cote, j);
+    etat.chaleur = true;
+    await afficherVue("chaleur");
+  });
+  consigne(`En rouge et jaune : ce que le réseau a regardé pour « ${nomCourt(configTroubles.troubles[cle].nom)} »`);
+  toile.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 async function installer(infos, source) {
   for (const t of [toile, survol]) { t.width = infos.largeur; t.height = infos.hauteur; }
-  Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false, etiquette: null });
-  if (etat.vue === "segmentation") etat.vue = "originale";
+  Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false, etiquette: null,
+    qualite: infos.qualite || null, chaleur: false, cartesTroubles: null });
+  if (etat.vue === "segmentation" || etat.vue === "chaleur") etat.vue = "originale";
   $("resultatMesures").replaceChildren();
   $("resultatTroubles").replaceChildren();
   $("lectureTroubles").hidden = true;
@@ -548,7 +576,7 @@ async function installer(infos, source) {
       (cercles, flèches, légendes) restent visibles et peuvent gêner les analyses.</p>`
     : "";
   synthese(`<p><strong>${etat.verite ? "Image annotée par un expert." : "Votre image est prête."}</strong>
-    Cliquez un point sur un vaisseau, puis un second plus loin sur le même vaisseau.</p>${recadrage}
+    Cliquez un point sur un vaisseau, puis un second plus loin sur le même vaisseau.</p>${messageQualite()}${recadrage}
     <p class="aide">${etat.verite ? "Le tracé sera comparé au chemin de l'expert." : "Sans annotation, le tracé ne peut pas être noté, mais vous pouvez comparer les prétraitements."}</p>`);
   $("details").hidden = true;
   $("telecharger").disabled = true;
@@ -581,6 +609,10 @@ function majVues() {
     if (b.dataset.vue === "verite") {
       b.disabled = !etat.verite;
       b.title = etat.verite ? "" : "Disponible sur les images d'exemple annotées";
+    }
+    if (b.dataset.vue === "chaleur") {
+      b.disabled = !etat.chaleur;
+      b.title = etat.chaleur ? "" : "Cliquez « Voir les zones » sous un résultat de « Analyser l'image »";
     }
     if (b.dataset.vue === "segmentation") {
       b.disabled = !etat.segmentation;
@@ -905,6 +937,7 @@ async function analyserTroubles() {
     const entree = new Float32Array(octets.slice().buffer);
     const sortie = await sessionTroubles.run({ image: new ort.Tensor("float32", entree, [1, 3, 384, 384]) });
     const z = sortie.logits.data;
+    etat.cartesTroubles = sortie.cartes ? { data: sortie.cartes.data, cote: sortie.cartes.dims[3] } : null;
     const resultats = configTroubles.ordre.map((cle, j) => {
       const t = configTroubles.troubles[cle];
       return { cle, ...t, p: 1 / (1 + Math.exp(-(t.a * z[j] + t.b))) };
@@ -958,12 +991,13 @@ function afficherTroubles(resultats) {
     const pourcentage = Math.round(100 * r.p);
     html += `<div class="trouble">
       <span class="titre">${echapper(r.nom)}</span>
-      <span class="niveau ${classeNiveau}">${mot} · ${pourcent(r.p)} %</span>
+      <span class="niveau ${classeNiveau}">${mot} · ${pourcent(r.p)} %${etat.cartesTroubles ? `<button type="button" class="voir-zones" data-cle="${r.cle}">Voir les zones</button>` : ""}</span>
       <div class="jauge" role="img" aria-label="${echapper(r.nom)} : ${pourcent(r.p)} %"><span class="${classeNiveau}" style="width:${Math.max(2, pourcentage)}%"></span></div>
       <span class="desc">${echapper(DESCRIPTIONS_TROUBLES[r.cle] || "")} · ${qualiteDetection(r.auroc)}</span>
     </div>`;
   }
-  $("resultatTroubles").innerHTML = html;
+  $("resultatTroubles").innerHTML = messageQualite() + html;
+  $("resultatTroubles").querySelectorAll(".voir-zones").forEach((b) => b.addEventListener("click", () => voirZones(b.dataset.cle)));
   const externe = configTroubles.ordre.some((cle) => configTroubles.troubles[cle].auroc_externe != null);
   let explication = `<p class="aide">Chaque pourcentage est une probabilité calibrée : sur des yeux d'une population comme celle
     des bases d'entraînement, « 70 % » correspond à environ 7 yeux atteints sur 10. Au-dessus de 50 % : probable. Le seuil
@@ -980,7 +1014,7 @@ function afficherTroubles(resultats) {
       <td>${fr(t.auroc, 2)} (${qualiteDetection(t.auroc)})</td><td>${pct(t.detectes_des_possible)}</td><td>${pct(t.fausses_alertes)}</td>${colonneExterne}</tr>`;
   }
   explication += `</tbody></table></div><p class="aide">Validation croisée : des milliers d'yeux que le réseau n'avait pas
-    vus, de gravité et de qualité variables ; c'est la mesure la plus représentative. L'AUROC vaut 1 si chaque œil malade
+    vus, de gravité et de qualité variables ; c'est la mesure la plus représentative. « Voir les zones » colore en rouge et jaune les régions de l'image qui font monter le score du trouble : c'est ce que le réseau a regardé, pas le contour précis d'une lésion. L'AUROC vaut 1 si chaque œil malade
     reçoit un score plus haut que chaque œil sain, 0,5 pour le hasard ; elle ne dit pas qu'il n'y a pas d'erreur : au seuil
     « possible », il y a toujours des cas manqués et des fausses alertes (colonnes précédentes).${externe ? ` Hôpital
     jamais vu : 1 000 photos de JSIEC (Chine), jamais utilisées pour l'entraînement ; ce test est optimiste, car ses photos

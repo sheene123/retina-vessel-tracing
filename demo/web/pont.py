@@ -13,10 +13,11 @@ from PIL import Image
 
 from vaisseaux.benchmark import CONFIGURATIONS
 from vaisseaux.biomarqueurs import MARQUEURS, mesurer
-from vaisseaux.donnees import carre_fond_oeil, entree_imagenet, isoler_fond_oeil
+from vaisseaux.donnees import cadre_carre, carre_fond_oeil, carte_sur_image, entree_imagenet, isoler_fond_oeil
 from vaisseaux.evaluation import auc_roc, evaluer_trace, metriques_binaires, reference_entre
 from vaisseaux.graphe import carte_de_cout, plus_court_chemin
 from vaisseaux.pretraitement import normaliser_pour_reseau, pretraiter
+from vaisseaux.qualite import evaluer as evaluer_qualite
 
 COTE_MAX = 800  # le calcul dans le navigateur est plus lent : on réduit les grandes images
 NOMS = {
@@ -90,6 +91,7 @@ def charger_image(octets, octets_verite=None) -> str:
         _etat["verite"] = verite
     return json.dumps(
         {
+            "qualite": evaluer_qualite(image),
             "largeur": taille[0],
             "hauteur": taille[1],
             "verite": "verite" in _etat,
@@ -115,6 +117,8 @@ def vue(nom: str, config: str) -> bytes:
         return _png(_etat["segmentation"].astype(float))
     if nom == "verite" and "verite" in _etat:
         return _png(_etat["verite"].astype(float))
+    if nom == "chaleur" and "chaleur" in _etat:
+        return _png(_etat["chaleur"])
     cartes = _cartes(config)
     if nom == "vert":
         return _png(cartes.vert)
@@ -283,4 +287,21 @@ def mesures() -> str:
 
 def entree_troubles() -> bytes:
     """Fond d'œil recadré en carré 384 × 384, normalisé ImageNet, float32 (3, 384, 384)."""
+    _etat["cadre_troubles"] = cadre_carre(_etat["rgb"])
     return entree_imagenet(carre_fond_oeil(_etat["rgb"])).tobytes()
+
+
+def definir_carte(octets, cote: int, indice: int) -> None:
+    """Carte de chaleur d'un trouble (sortie « cartes » du réseau, float32 (6, cote, cote)) :
+    contribution de chaque zone au score. On garde la partie qui fait monter le score, normalisée,
+    et on la superpose à l'image en rouge et jaune ; le reste de l'image est assombri."""
+    cartes = np.frombuffer(bytes(octets), dtype=np.float32).reshape(-1, cote, cote)
+    carte = carte_sur_image(cartes[indice], _etat["rgb"].shape[:2], _etat["cadre_troubles"])
+    oeil = _etat["masque"]
+    valeurs = carte[oeil]
+    bas, haut = np.percentile(valeurs, 50), np.percentile(valeurs, 99.5)
+    intensite = np.clip((carte - bas) / max(haut - bas, 1e-6), 0, 1) * oeil
+    couleur = np.stack([np.ones_like(intensite), intensite, np.zeros_like(intensite)], axis=-1)  # rouge vers jaune
+    alpha = (0.65 * intensite)[..., None]
+    fond = _etat["rgb"].astype(np.float32) / 255 * 0.55
+    _etat["chaleur"] = np.clip(fond * (1 - alpha) + couleur * alpha, 0, 1)
