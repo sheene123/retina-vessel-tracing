@@ -86,6 +86,32 @@ def carre_fond_oeil(rgb: np.ndarray, taille: int = 384) -> np.ndarray:
     return np.asarray(Image.fromarray(carre).resize((taille, taille), Image.Resampling.BILINEAR))
 
 
+def localiser_papille(carre: np.ndarray) -> tuple[int, int]:
+    """Centre approximatif de la papille (disque optique) sur un fond d'œil recadré : la zone la
+    plus claire en rouge et en vert après un fort lissage, en évitant le bord du champ de vue.
+    Sert à fabriquer des gros plans de la papille (augmentation et test du glaucome)."""
+    h, w = carre.shape[:2]
+    x = carre[..., :3].astype(np.float32)
+    champ = ndi.binary_erosion(x[..., 0] > 20, iterations=max(2, h // 25))
+    clarte = ndi.gaussian_filter(0.5 * x[..., 0] + x[..., 1], sigma=max(2.0, h / 40))
+    clarte[~champ] = -1
+    ligne, colonne = np.unravel_index(int(np.argmax(clarte)), clarte.shape)
+    return int(ligne), int(colonne)
+
+
+def gros_plan_papille(carre: np.ndarray, part: float = 0.4, taille: int | None = None) -> np.ndarray:
+    """Gros plan carré centré sur la papille, de côté `part` × celui de l'image, comme une photo
+    de papille prise de près ; redimensionné à `taille` (par défaut, la taille d'origine)."""
+    h, w = carre.shape[:2]
+    ligne, colonne = localiser_papille(carre)
+    cote = max(8, int(part * min(h, w)))
+    haut = min(max(0, ligne - cote // 2), h - cote)
+    gauche = min(max(0, colonne - cote // 2), w - cote)
+    zoom = carre[haut : haut + cote, gauche : gauche + cote]
+    taille = taille or w
+    return np.asarray(Image.fromarray(np.ascontiguousarray(zoom)).resize((taille, taille), Image.Resampling.BILINEAR))
+
+
 def isoler_fond_oeil(rgb: np.ndarray) -> tuple[np.ndarray, np.ndarray | None, tuple[int, int, int, int] | None]:
     """Recadre sur le fond d'œil trouvé par `localiser_fond_oeil` et met en noir tout le reste.
     Renvoie l'image, le masque de l'œil et le cadre, ou l'image intacte si rien n'est trouvé."""

@@ -92,6 +92,15 @@ def construire_jeu(odir: Path) -> pd.DataFrame:
 ARCHITECTURE = "efficientnet_b0.ra_in1k"
 
 
+# Gros plans de la papille (photos prises de près) : une part des images d'entraînement est recadrée
+# sur la papille ; sur ces gros plans, seuls les troubles visibles autour de la papille gardent leur
+# étiquette (les lésions de la macula ou de la périphérie sortent du cadre).
+PART_GROS_PLANS, CADRAGES_GROS_PLAN, TROUBLES_PAPILLE = 0.2, (0.18, 0.6), ("glaucome", "myopie")
+# Distillation : la sortie glaucome apprend aussi l'avis d'un professeur (RETFound, voir
+# vaisseaux.professeur), donné pour chaque image par un modèle qui ne l'a pas vue à l'entraînement.
+POIDS_PROFESSEUR = 0.5
+GROS_PLAN_TEST = 0.2  # test : papille qui remplit presque l'image, comme une photo de papille
+
 POIDS_INITIAUX: Path | None = None  # fichier de poids ImageNet, quand la machine n'a pas internet
 
 
@@ -169,20 +178,48 @@ def transformations(entrainement: bool):
     )
 
 
-def _chargeur(lignes: pd.DataFrame, entrainement: bool, images_par_epoque: int | None = None):
+def _chargeur(
+    lignes: pd.DataFrame,
+    entrainement: bool,
+    images_par_epoque: int | None = None,
+    gros_plan: float | None = None,
+    colonnes: list[str] | None = None,
+    transformation=None,
+    taille_lot: int | None = None,
+    part_gros_plans: float = PART_GROS_PLANS,
+):
+    """Images et cibles. À l'entraînement, une part des images devient un gros plan de la papille
+    (étiquettes des troubles invisibles ignorées) ; en test, `gros_plan` recadre toutes les images.
+    La colonne « prof_glaucome », si présente, est ajoutée en dernière cible (-1 si absente)."""
+    import random
+
     import torch
     from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
-    transformation = transformations(entrainement)
+    from vaisseaux.donnees import gros_plan_papille
+
+    transformation = transformation or transformations(entrainement)
+    colonnes = colonnes or CLES
     chemins = lignes["chemin"].tolist()
-    cibles = torch.tensor(lignes[CLES].to_numpy(dtype=np.float32))
+    valeurs = lignes[colonnes].to_numpy(dtype=np.float32)
+    if "prof_glaucome" in lignes:
+        valeurs = np.column_stack([valeurs, np.nan_to_num(lignes["prof_glaucome"].to_numpy(np.float32), nan=-1)])
+    cibles = torch.tensor(valeurs)
+    hors_papille = [j for j, c in enumerate(colonnes) if c not in TROUBLES_PAPILLE]
 
     class Images(Dataset):
         def __len__(self) -> int:
             return len(chemins)
 
         def __getitem__(self, i: int):
-            return transformation(Image.open(chemins[i]).convert("RGB")), cibles[i]
+            image, cible = Image.open(chemins[i]).convert("RGB"), cibles[i].clone()
+            part = gros_plan
+            if entrainement and random.random() < part_gros_plans:
+                part = random.uniform(*CADRAGES_GROS_PLAN)
+                cible[hors_papille] = -1
+            if part:
+                image = Image.fromarray(gros_plan_papille(np.asarray(image), part))
+            return transformation(image), cible
 
     echantillonneur = None
     if entrainement:
@@ -193,7 +230,7 @@ def _chargeur(lignes: pd.DataFrame, entrainement: bool, images_par_epoque: int |
         )
     return DataLoader(
         Images(),
-        batch_size=32 if entrainement else 64,
+        batch_size=taille_lot or (32 if entrainement else 64),
         sampler=echantillonneur,
         num_workers=min(6, os.cpu_count() or 4),  # plus saturerait la mémoire de WSL (7,5 Go)
         drop_last=entrainement,
@@ -244,11 +281,19 @@ def entrainer(
             cible = cible.to(appareil, non_blocking=True)
             with torch.autocast(appareil, dtype=precision, enabled=appareil == "cuda"):
                 logits = modele(x)
+            avis = cible[:, len(CLES)] if cible.shape[1] > len(CLES) else None
+            cible = cible[:, : len(CLES)]
             connu = cible >= 0  # trouble non étiqueté par ce jeu, ou incertain : ignoré
             perte = torch.nn.functional.binary_cross_entropy_with_logits(
                 logits.float(), cible.clamp(min=0), pos_weight=poids_positifs, reduction="none"
             )
             perte = (perte * connu).sum() / connu.sum().clamp(min=1)
+            if avis is not None and (avis >= 0).any():
+                # distillation : probabilité du professeur comme cible douce pour le glaucome
+                a_un_avis = avis >= 0
+                perte = perte + POIDS_PROFESSEUR * torch.nn.functional.binary_cross_entropy_with_logits(
+                    logits[a_un_avis, CLES.index("glaucome")].float(), avis[a_un_avis]
+                )
             optimiseur.zero_grad()
             echelle.scale(perte).backward()
             echelle.step(optimiseur)
@@ -264,13 +309,13 @@ def entrainer(
     return modele.eval()
 
 
-def logits(modele, lignes: pd.DataFrame) -> np.ndarray:
+def logits(modele, lignes: pd.DataFrame, gros_plan: float | None = None) -> np.ndarray:
     import torch
 
     appareil = next(modele.parameters()).device
     sorties = []
     with torch.no_grad():
-        for x, _ in _chargeur(lignes, entrainement=False):
+        for x, _ in _chargeur(lignes, entrainement=False, gros_plan=gros_plan):
             sorties.append(modele(x.to(appareil, memory_format=torch.channels_last)).float().cpu().numpy())
     return np.concatenate(sorties)
 
@@ -476,6 +521,7 @@ def lire_index(chemin: Path) -> pd.DataFrame:
     ce qui permet de déplacer le tout (par exemple vers un jeu de données Kaggle)."""
     index = pd.read_csv(chemin, low_memory=False)
     base = Path(chemin).parent
+    index["cle"] = index["chemin"]  # chemin tel qu'écrit dans l'index : identifiant stable de l'image
     index["chemin"] = [c if Path(c).is_absolute() else str(base / c) for c in index["chemin"]]
     return index
 
@@ -508,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--architecture", default=ARCHITECTURE)
     parser.add_argument("--epoques", type=int, default=12)
     parser.add_argument("--images-par-epoque", type=int, default=12000)
+    parser.add_argument("--professeur", type=Path, help="avis du professeur RETFound (professeur.csv)")
     parser.add_argument("--poids-initiaux", type=Path, help="poids ImageNet (safetensors) si pas d'accès internet")
     parser.add_argument("--sans-onnx", action="store_true", help="n'exporte pas en ONNX (fait ensuite avec --exporter)")
     parser.add_argument("--exporter", type=Path, metavar="POIDS.pt", help="exporte seulement ces poids en ONNX")
@@ -543,6 +590,10 @@ def main(argv: list[str] | None = None) -> int:
     jeu = index[index["source"] != "jsiec"].reset_index(drop=True)
     externe = index[index["source"] == "jsiec"].reset_index(drop=True)
     jeu["pli"] = _plis(jeu)
+    if args.professeur:
+        avis = pd.read_csv(args.professeur).set_index("cle")["logit_professeur"]
+        jeu["prof_glaucome"] = 1 / (1 + np.exp(-jeu["cle"].map(avis).to_numpy(dtype=np.float64)))
+        print(f"avis du professeur : {int(jeu['prof_glaucome'].notna().sum())} images", flush=True)
     print(
         f"entraînement : {len(jeu)} images ({', '.join(f'{s} {n}' for s, n in jeu['source'].value_counts().items())}) ; "
         f"test externe JSIEC : {len(externe)} images\natteints : "
@@ -594,6 +645,7 @@ def main(argv: list[str] | None = None) -> int:
     print("évaluation sur le test externe JSIEC et export ONNX…", flush=True)
     torch.save(final.state_dict(), args.modele.with_suffix(".pt"))
     z_externe = logits(final, externe)
+    z_gros_plan = logits(final, externe, gros_plan=GROS_PLAN_TEST)
     exemples = np.stack([transformations(False)(Image.open(c).convert("RGB")).numpy() for c in externe["chemin"][:8]])
     ecart = None if args.sans_onnx else exporter(final, args.modele, exemples)
     infos = {
@@ -602,12 +654,20 @@ def main(argv: list[str] | None = None) -> int:
         "parite_onnx": ecart,
         "duree_s": round(time.perf_counter() - debut, 1),
     }
-    ecrire_resultats(args.sortie, jeu, z, externe, z_externe, infos)
+    ecrire_resultats(
+        args.sortie, jeu.drop(columns=["prof_glaucome"], errors="ignore"), z, externe, z_externe, infos, z_gros_plan
+    )
     return 0
 
 
 def ecrire_resultats(
-    sortie: Path, jeu: pd.DataFrame, z: np.ndarray, externe: pd.DataFrame, z_externe: np.ndarray, infos: dict
+    sortie: Path,
+    jeu: pd.DataFrame,
+    z: np.ndarray,
+    externe: pd.DataFrame,
+    z_externe: np.ndarray,
+    infos: dict,
+    z_gros_plan: np.ndarray | None = None,
 ) -> None:
     """Calibrage, évaluations, seuils et fichiers de résultats à partir des prédictions hors pli
     (jeu) et du modèle final (externe). Utilisée après l'entraînement et par --recalculer."""
@@ -615,10 +675,12 @@ def ecrire_resultats(
     resultat = evaluer(jeu, z, calibrage)
     seuils = {c: resultat[c]["seuil_possible"] for c in CLES}
     externe_resultat = evaluer_externe(externe, z_externe, calibrage, seuils)
+    gros_plan = None if z_gros_plan is None else evaluer_externe(externe, z_gros_plan, calibrage, seuils)
     resultat_complet = {
         "architecture": infos.get("architecture", ARCHITECTURE),
         "troubles": resultat,
         "externe_jsiec": externe_resultat,
+        "externe_jsiec_gros_plan": gros_plan,
         "auroc_par_source": infos.get("auroc_par_source", {}),
         "calibrage": calibrage,
         "parite_onnx": infos.get("parite_onnx"),
@@ -658,9 +720,10 @@ def ecrire_resultats(
     }
     (sortie / "troubles_demo.json").write_text(json.dumps(demo, indent=1, ensure_ascii=False))
     jeu.assign(**{f"logit_{c}": z[:, j] for j, c in enumerate(CLES)}).to_csv(sortie / "predictions.csv", index=False)
-    externe.assign(**{f"logit_{c}": z_externe[:, j] for j, c in enumerate(CLES)}).to_csv(
-        sortie / "predictions_externe.csv", index=False
-    )
+    colonnes = {f"logit_{c}": z_externe[:, j] for j, c in enumerate(CLES)}
+    if z_gros_plan is not None:
+        colonnes |= {f"logit_gros_plan_{c}": z_gros_plan[:, j] for j, c in enumerate(CLES)}
+    externe.assign(**colonnes).to_csv(sortie / "predictions_externe.csv", index=False)
     figure(resultat, sortie / "auroc_par_trouble.png", externe_resultat)
     print("trouble        seuil « possible »   interne (IC 95 %)        externe JSIEC (IC 95 %)")
     for c in CLES:
@@ -673,6 +736,12 @@ def ecrire_resultats(
         print(
             f"{c:13s}  {100 * r['seuil_possible']:5.1f} %   {r['auroc']:.3f} [{r['ic_bas']:.2f} ; {r['ic_haut']:.2f}]"
             f"   {texte_externe}"
+        )
+    if gros_plan and "auroc" in gros_plan["glaucome"]:
+        g = gros_plan["glaucome"]
+        print(
+            f"glaucome sur gros plans de la papille (JSIEC) : AUROC {g['auroc']:.3f} [{g['ic_bas']:.2f} ; {g['ic_haut']:.2f}],"
+            f" {100 * g['sensibilite_possible']:.0f} % des cas signalés"
         )
     ecart = infos.get("parite_onnx")
     parite = "export ONNX à faire avec --exporter" if ecart is None else f"parité ONNX (images réelles) : {ecart:.2e}"
@@ -687,9 +756,11 @@ def recalculer(sortie: Path) -> None:
     externe = pd.read_csv(sortie / "predictions_externe.csv", low_memory=False)
     z = jeu[[f"logit_{c}" for c in CLES]].to_numpy(dtype=np.float32)
     z_externe = externe[[f"logit_{c}" for c in CLES]].to_numpy(dtype=np.float32)
+    colonnes_gp = [f"logit_gros_plan_{c}" for c in CLES]
+    z_gros_plan = externe[colonnes_gp].to_numpy(dtype=np.float32) if colonnes_gp[0] in externe else None
     jeu = jeu.drop(columns=[f"logit_{c}" for c in CLES])
-    externe = externe.drop(columns=[f"logit_{c}" for c in CLES])
-    ecrire_resultats(sortie, jeu, z, externe, z_externe, anciens)
+    externe = externe.drop(columns=[f"logit_{c}" for c in CLES] + (colonnes_gp if z_gros_plan is not None else []))
+    ecrire_resultats(sortie, jeu, z, externe, z_externe, anciens, z_gros_plan)
 
 
 if __name__ == "__main__":
