@@ -42,3 +42,15 @@ def test_etiquettes_du_test_externe_coherentes():
     assert set(JSIEC_POSITIFS) <= set(CLES) and set(JSIEC_INCERTAINS) <= set(CLES)
     for cle, positifs in JSIEC_POSITIFS.items():
         assert not set(positifs) & set(JSIEC_INCERTAINS.get(cle, ()))
+
+
+def test_seuil_possible_par_trouble():
+    pytest.importorskip("sklearn")
+    from vaisseaux.troubles import SEUIL_POSSIBLE_MAX, SEUIL_POSSIBLE_MIN, seuil_possible
+
+    # 8 atteints sur 10 au-dessus du seuil, dans les bornes
+    p = np.linspace(0.05, 0.15, 101)
+    s = seuil_possible(p)
+    assert SEUIL_POSSIBLE_MIN <= s <= SEUIL_POSSIBLE_MAX and abs((p >= s).mean() - 0.8) < 0.02
+    assert seuil_possible(np.full(50, 0.9)) == SEUIL_POSSIBLE_MAX  # trouble fréquent : 20 % au plus
+    assert seuil_possible(np.full(50, 0.001)) == SEUIL_POSSIBLE_MIN  # trouble rare : 3 % au moins

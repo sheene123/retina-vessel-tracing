@@ -19,7 +19,8 @@ RACINE = Path(__file__).resolve().parents[1]
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--space", required=True, help="identifiant du Space, ex. utilisateur/retina-vessel-tracing")
+    parser.add_argument("--space", help="identifiant du Space, ex. utilisateur/retina-vessel-tracing")
+    parser.add_argument("--local", type=Path, help="assemble le site dans ce dossier, sans le publier (test)")
     parser.add_argument("--message", default="Met à jour la démo web")
     parser.add_argument("--depuis-registre", metavar="VERSION", help="prend les modèles de cette version du registre")
     parser.add_argument("--registre", default="sheenee261/retina-vessel-tracing")
@@ -54,6 +55,12 @@ def main() -> int:
                         f"{source} manquant : entraînez et exportez les modèles, ou utilisez --depuis-registre"
                     )
                 shutil.copy(source, site / cible)
+        if args.local:
+            shutil.copytree(site, args.local, dirs_exist_ok=True)
+            print(f"site assemblé dans {args.local}")
+            return 0
+        if not args.space:
+            raise SystemExit("--space ou --local est requis")
         api = HfApi()
         api.create_repo(args.space, repo_type="space", space_sdk="static", exist_ok=True)
         api.upload_folder(

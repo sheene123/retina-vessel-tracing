@@ -7,142 +7,156 @@
   "hypertension",
   "myopie"
  ],
+ "origine": "14 417 photos de 4 bases publiques (ODIR-5K, SMDG-19, RFMiD, sjchoi86)",
+ "seuil_probable": 0.5,
  "troubles": {
   "diabete": {
    "nom": "Rétinopathie diabétique",
-   "a": 0.5278932452201843,
-   "b": -0.6002472639083862,
-   "auroc": 0.8375112488252613,
-   "ic_bas": 0.8249626063576412,
-   "ic_haut": 0.849902184276706,
-   "detectes_des_possible": 0.7939464493597206,
+   "a": 0.7807380557060242,
+   "b": -1.1440047025680542,
+   "seuil_possible": 0.2,
+   "auroc": 0.8964879221871596,
+   "ic_bas": 0.8882830593116064,
+   "ic_haut": 0.9051422487312074,
+   "auroc_externe": 0.9423104762823915,
+   "detectes_des_possible": 0.8272340425531914,
    "niveaux": {
     "peu_probable": {
-     "yeux": 3533,
-     "part_atteints": 0.10019813189923578
+     "yeux": 6241,
+     "part_atteints": 0.06505367729530524
     },
     "possible": {
-     "yeux": 1744,
-     "part_atteints": 0.2947247706422018
+     "yeux": 2025,
+     "part_atteints": 0.2992592592592593
     },
     "probable": {
-     "yeux": 1111,
-     "part_atteints": 0.7650765076507651
+     "yeux": 1622,
+     "part_atteints": 0.8249075215782984
     }
    }
   },
   "glaucome": {
    "nom": "Glaucome",
-   "a": 0.45599085092544556,
-   "b": -1.3573497533798218,
-   "auroc": 0.8988683316721984,
-   "ic_bas": 0.8734516850267201,
-   "ic_haut": 0.9206760731384082,
-   "detectes_des_possible": 0.5404411764705882,
+   "a": 0.730917751789093,
+   "b": -1.6399097442626953,
+   "seuil_possible": 0.15989834070205688,
+   "auroc": 0.8972490892329839,
+   "ic_bas": 0.8901191935134677,
+   "ic_haut": 0.904276487265939,
+   "auroc_externe": 0.9969230769230769,
+   "detectes_des_possible": 0.7998955067920586,
    "niveaux": {
     "peu_probable": {
-     "yeux": 6036,
-     "part_atteints": 0.0207090788601723
+     "yeux": 10576,
+     "part_atteints": 0.03621406959152799
     },
     "possible": {
-     "yeux": 203,
-     "part_atteints": 0.3448275862068966
+     "yeux": 2463,
+     "part_atteints": 0.2976045473000406
     },
     "probable": {
-     "yeux": 112,
-     "part_atteints": 0.6875
+     "yeux": 1169,
+     "part_atteints": 0.6826347305389222
     }
    }
   },
   "cataracte": {
    "nom": "Cataracte",
-   "a": 0.6262082457542419,
-   "b": -1.1307744979858398,
-   "auroc": 0.9766023723253796,
-   "ic_bas": 0.9632553625976563,
-   "ic_haut": 0.9874521444301361,
-   "detectes_des_possible": 0.8704318936877077,
+   "a": 0.6949805617332458,
+   "b": -1.9100854396820068,
+   "seuil_possible": 0.2,
+   "auroc": 0.9850174139259184,
+   "ic_bas": 0.9790520893177579,
+   "ic_haut": 0.9897972581343454,
+   "auroc_externe": null,
+   "detectes_des_possible": 0.8553615960099751,
    "niveaux": {
     "peu_probable": {
-     "yeux": 6037,
-     "part_atteints": 0.006460162332284247
+     "yeux": 9064,
+     "part_atteints": 0.006398940864960283
     },
     "possible": {
-     "yeux": 79,
-     "part_atteints": 0.31645569620253167
+     "yeux": 152,
+     "part_atteints": 0.375
     },
     "probable": {
-     "yeux": 276,
-     "part_atteints": 0.8586956521739131
+     "yeux": 353,
+     "part_atteints": 0.8101983002832861
     }
    }
   },
   "dmla": {
    "nom": "DMLA (dégénérescence maculaire liée à l'âge)",
-   "a": 0.5237279534339905,
-   "b": -1.1189799308776855,
-   "auroc": 0.9171351973255765,
-   "ic_bas": 0.8948199791526823,
-   "ic_haut": 0.9379317674795175,
-   "detectes_des_possible": 0.6344086021505376,
+   "a": 0.6925886273384094,
+   "b": -2.0973665714263916,
+   "seuil_possible": 0.08357176929712296,
+   "auroc": 0.9403804871005006,
+   "ic_bas": 0.9268703262146563,
+   "ic_haut": 0.9531841876439903,
+   "auroc_externe": 0.9530011325028312,
+   "detectes_des_possible": 0.7991071428571429,
    "niveaux": {
     "peu_probable": {
-     "yeux": 5911,
-     "part_atteints": 0.017255963457959735
+     "yeux": 8767,
+     "part_atteints": 0.010265769362381659
     },
     "possible": {
-     "yeux": 159,
-     "part_atteints": 0.33962264150943394
+     "yeux": 672,
+     "part_atteints": 0.2261904761904762
     },
     "probable": {
-     "yeux": 153,
-     "part_atteints": 0.803921568627451
+     "yeux": 284,
+     "part_atteints": 0.7253521126760564
     }
    }
   },
   "hypertension": {
    "nom": "Rétinopathie hypertensive",
-   "a": 0.4015471339225769,
-   "b": -1.3222932815551758,
-   "auroc": 0.8172001008064517,
-   "ic_bas": 0.7754339656481686,
-   "ic_haut": 0.8567927735699441,
-   "detectes_des_possible": 0.23958333333333334,
+   "a": 0.5696150660514832,
+   "b": -1.9477077722549438,
+   "seuil_possible": 0.03,
+   "auroc": 0.8591954621677252,
+   "ic_bas": 0.8290854442440441,
+   "ic_haut": 0.8879581764446797,
+   "auroc_externe": 0.979465541490858,
+   "detectes_des_possible": 0.6632124352331606,
    "niveaux": {
     "peu_probable": {
-     "yeux": 6267,
-     "part_atteints": 0.023296633157810755
+     "yeux": 8240,
+     "part_atteints": 0.007888349514563107
     },
     "possible": {
-     "yeux": 110,
-     "part_atteints": 0.34545454545454546
+     "yeux": 1640,
+     "part_atteints": 0.07378048780487804
     },
     "probable": {
-     "yeux": 15,
-     "part_atteints": 0.5333333333333333
+     "yeux": 12,
+     "part_atteints": 0.5833333333333334
     }
    }
   },
   "myopie": {
    "nom": "Myopie forte",
-   "a": 0.6420100331306458,
-   "b": -1.314265489578247,
-   "auroc": 0.9943281377343114,
-   "ic_bas": 0.9911441469345319,
-   "ic_haut": 0.9970389864248093,
-   "detectes_des_possible": 0.8984375,
+   "a": 0.8033658266067505,
+   "b": -1.5756099224090576,
+   "seuil_possible": 0.2,
+   "auroc": 0.9964582862532285,
+   "ic_bas": 0.9950033625097963,
+   "ic_haut": 0.9977338270006778,
+   "auroc_externe": 0.9994351650125071,
+   "detectes_des_possible": 0.9219858156028369,
    "niveaux": {
     "peu_probable": {
-     "yeux": 6110,
-     "part_atteints": 0.00425531914893617
+     "yeux": 9108,
+     "part_atteints": 0.0036231884057971015
     },
     "possible": {
-     "yeux": 47,
-     "part_atteints": 0.3829787234042553
+     "yeux": 73,
+     "part_atteints": 0.3150684931506849
     },
     "probable": {
-     "yeux": 234,
-     "part_atteints": 0.905982905982906
+     "yeux": 406,
+     "part_atteints": 0.9039408866995073
     }
    }
   }

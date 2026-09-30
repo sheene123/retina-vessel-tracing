@@ -51,7 +51,8 @@ def main() -> int:
             for c in externe["chemin"]
         ]
     )
-    resultat = evaluer_externe(externe, z, calibrage)
+    seuils = {c: configuration["troubles"][c].get("seuil_possible", 0.2) for c in CLES}
+    resultat = evaluer_externe(externe, z, calibrage, seuils)
     print(f"test externe JSIEC : {len(externe)} images — {args.modele}")
     print(
         f"{'trouble':13s} {'AUROC [IC 95 %]':>22s} {'atteints':>9s} {'signalés ≥ possible':>20s} {'sains peu probable':>19s}"

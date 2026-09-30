@@ -1,0 +1,57 @@
+{
+ "diabete": {
+  "nom": "Rétinopathie diabétique",
+  "yeux": 888,
+  "atteints": 106,
+  "auroc": 0.923949235149351,
+  "ic_bas": 0.891253889869093,
+  "ic_haut": 0.951356655269719,
+  "sensibilite_possible": 0.9245283018867925,
+  "specificite_peu_probable": 0.629156010230179
+ },
+ "glaucome": {
+  "nom": "Glaucome",
+  "yeux": 938,
+  "atteints": 13,
+  "auroc": 0.9373804573804573,
+  "ic_bas": 0.8864526760668978,
+  "ic_haut": 0.9762775649356721,
+  "sensibilite_possible": 0.38461538461538464,
+  "specificite_peu_probable": 0.9805405405405405
+ },
+ "cataracte": {
+  "nom": "Cataracte",
+  "yeux": 841,
+  "atteints": 0
+ },
+ "dmla": {
+  "nom": "DMLA (dégénérescence maculaire liée à l'âge)",
+  "yeux": 957,
+  "atteints": 74,
+  "auroc": 0.9232958893208044,
+  "ic_bas": 0.8918700016257048,
+  "ic_haut": 0.949631622014699,
+  "sensibilite_possible": 0.7972972972972973,
+  "specificite_peu_probable": 0.8980747451868629
+ },
+ "hypertension": {
+  "nom": "Rétinopathie hypertensive",
+  "yeux": 963,
+  "atteints": 15,
+  "auroc": 0.8964135021097046,
+  "ic_bas": 0.7940224131213445,
+  "ic_haut": 0.9739669289055256,
+  "sensibilite_possible": 0.6666666666666666,
+  "specificite_peu_probable": 0.9525316455696202
+ },
+ "myopie": {
+  "nom": "Myopie forte",
+  "yeux": 972,
+  "atteints": 54,
+  "auroc": 0.9823287339627209,
+  "ic_bas": 0.9627437202811541,
+  "ic_haut": 0.9941117109509378,
+  "sensibilite_possible": 0.8703703703703703,
+  "specificite_peu_probable": 0.9694989106753813
+ }
+}

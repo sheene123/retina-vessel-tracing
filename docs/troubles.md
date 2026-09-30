@@ -2,45 +2,111 @@
 
 ## Objectif
 
-Le modèle reconnaît des annotations de fond d'œil issues d'ODIR-5K. Il ne mesure pas la tension
-artérielle, la puissance optique d'une myopie ou l'état cardiaque d'une personne. Une sortie
-« probable » est un signal à interpréter médicalement, pas un diagnostic.
+Le modèle repère, sur une photo couleur du fond d'œil, des signes de six troubles : rétinopathie
+diabétique, glaucome, cataracte, DMLA, rétinopathie hypertensive et myopie forte. Il reconnaît des
+annotations de jeux de données publics : il ne mesure ni la tension artérielle, ni la correction
+d'une myopie, ni l'état cardiaque d'une personne. Une sortie « probable » est un signal à faire
+interpréter par un ophtalmologiste, pas un diagnostic.
+
+## Données (version 0.2.0)
+
+La première version n'était entraînée que sur ODIR-5K : elle se trompait souvent sur des images
+venues d'ailleurs (manuels, sites web, autres appareils). La version 0.2.0 réunit quatre bases
+publiques ([sources_troubles.py](../src/vaisseaux/sources_troubles.py)) :
+
+| Base | Images | Troubles étiquetés |
+|---|---:|---|
+| ODIR-5K (Chine, plusieurs appareils) | 6 392 | les six |
+| RFMiD (Inde, 3 appareils) | 3 200 | rétinopathie diabétique, glaucome (excavation papillaire), DMLA, myopie, rétinopathie hypertensive |
+| SMDG-19 (15 jeux de glaucome) | 4 224 | glaucome |
+| sjchoi86 | 601 | cataracte, glaucome |
+
+- **Étiquettes partielles** : chaque base n'annote que certains troubles ; les autres sont ignorés
+  par la perte au lieu d'être comptés comme absents. Les diagnostics incertains (« suspect »,
+  fond tigré seul, trouble des milieux pour la cataracte) sont ignorés de la même façon.
+- **Même préparation que la démo** : chaque image est recadrée sur l'œil et mise au carré par la
+  fonction utilisée dans le navigateur (`preparer_fond_oeil`).
+- **Doublons** : SMDG contient lui-même ODIR et JSIEC ; ces sous-jeux sont retirés, ainsi que ceux
+  qui n'ont qu'une classe (un jeu 100 % glaucome apprendrait la caméra plutôt que la maladie).
+  Les quasi-doublons restants sont proposés par une empreinte perceptuelle, puis confirmés par la
+  corrélation du dessin fin des vaisseaux (deux yeux différents ne dépassent pas 0,45, un doublon
+  dépasse 0,5) : 299 doublons sont regroupés, aucun n'est partagé avec le test externe.
+- **Augmentations « monde réel »** : zoom jusqu'à un gros plan de la papille, compression JPEG,
+  flou, basse résolution, dominante de couleur, traits et lettres comme sur une figure annotée.
 
 ## Protocole
 
-- 6 392 yeux provenant de 3 358 patients ;
-- séparation des plis par patient, pour qu'un même patient ne soit jamais présent dans
-  l'entraînement et l'évaluation ;
-- modèle multi-sortie exporté en ONNX pour l'exécution dans le navigateur ;
-- calibrage indépendant de chaque sortie, puis conversion en niveaux « peu probable », « possible »
-  et « probable » ;
-- AUROC et intervalles de confiance à 95 % calculés hors pli.
-
-Les classes sont la rétinopathie diabétique, le glaucome, la cataracte, la DMLA, la rétinopathie
-hypertensive et la myopie forte. Les libellés proviennent du diagnostic ODIR-5K et ne constituent
-pas une vérité clinique exhaustive.
+- EfficientNet-B0 pré-entraîné sur ImageNet, 384 × 384, 6 sorties, 12 époques ; entraîné sur un
+  GPU T4 (Kaggle, environ 3 h 15).
+- Validation croisée en 5 plis groupée par patient et par doublon, stratifiée par base et par
+  trouble ; AUROC avec IC 95 % par bootstrap sur les groupes.
+- Calibrage de Platt de chaque sortie sur les prédictions hors pli : un « 70 % » correspond à
+  environ 7 yeux atteints sur 10 dans une population comme celle des bases d'entraînement.
+- **Test externe** : JSIEC-1000 (Joint Shantou International Eye Centre), 1 000 photos d'un
+  hôpital jamais utilisé pour l'entraînement ni pour les réglages.
+- Export ONNX vérifié sur de vraies images (écart maximal 9·10⁻⁵ avec PyTorch).
 
 ## Résultats
 
-| Trouble | Yeux évalués | Cas positifs | AUROC | IC 95 % |
-|---|---:|---:|---:|---:|
-| Rétinopathie diabétique | 6 388 | 1 718 | 0,84 | [0,82 ; 0,85] |
-| Glaucome | 6 351 | 272 | 0,90 | [0,87 ; 0,92] |
-| Cataracte | 6 392 | 301 | 0,98 | [0,96 ; 0,99] |
-| DMLA | 6 223 | 279 | 0,92 | [0,89 ; 0,94] |
-| Rétinopathie hypertensive | 6 392 | 192 | 0,82 | [0,78 ; 0,86] |
-| Myopie forte | 6 391 | 256 | 0,99 | [0,99 ; 1,00] |
+| Trouble | AUROC validation croisée | AUROC test externe JSIEC | Version 0.1.1 sur JSIEC |
+|---|---|---|---|
+| Rétinopathie diabétique | 0,90 [0,89 ; 0,91] | **0,94** [0,91 ; 0,97] (106 cas) | 0,92 |
+| Glaucome | 0,90 [0,89 ; 0,90] | **1,00** [0,99 ; 1,00] (13 cas) | 0,94 |
+| Cataracte | 0,99 [0,98 ; 0,99] | pas de cas dans JSIEC | — |
+| DMLA | 0,94 [0,93 ; 0,95] | **0,95** [0,93 ; 0,97] (74 cas) | 0,92 |
+| Rétinopathie hypertensive | 0,86 [0,83 ; 0,89] | **0,98** [0,96 ; 0,99] (15 cas) | 0,90 |
+| Myopie forte | 1,00 [1,00 ; 1,00] | **1,00** [1,00 ; 1,00] (54 cas) | 0,98 |
 
-La parité entre le modèle PyTorch et l'export ONNX est de 0,979 en corrélation sur les sorties.
-Les résultats détaillés, les prédictions et la figure ROC sont dans
-[resultats/troubles/](../resultats/troubles/).
+Sur les seules images ODIR, le nouveau modèle fait jeu égal avec l'ancien (par exemple 0,83 contre
+0,84 pour la rétinopathie diabétique) : le gain porte sur la généralisation à d'autres hôpitaux et
+appareils, ce qui était le but.
+
+À lire avec prudence :
+
+- dans JSIEC, la DMLA est approchée par la catégorie « maculopathie », et la rétinopathie
+  hypertensive n'y est présente que sous sa forme sévère ; le glaucome ne compte que 13 cas,
+  d'où un intervalle large ;
+- dans RFMiD, le glaucome est approché par l'excavation de la papille ;
+- les gros plans très serrés sur la papille restent difficiles pour le glaucome.
+
+## Niveaux affichés dans la démo
+
+Le seuil « probable » est commun : plus d'une chance sur deux. Le seuil « possible » dépend du
+trouble : il est placé pour signaler environ 8 yeux atteints sur 10 en validation croisée, entre
+3 % et 20 %. Sans cela, un trouble rare dans les données (la rétinopathie hypertensive ne concerne
+que 2 % des yeux) n'atteint presque jamais 20 % même quand le réseau classe bien les patients :
+avec un seuil unique de 20 %, seuls 7 % des cas de JSIEC étaient signalés, contre 87 % avec le
+seuil adapté (et 94 % des yeux sans ce trouble restent « peu probable »).
+
+| Trouble | « Possible » dès | Cas JSIEC signalés | Yeux JSIEC sans le trouble restés « peu probable » |
+|---|---:|---:|---:|
+| Rétinopathie diabétique | 20 % | 87 % | 85 % |
+| Glaucome | 16 % | 100 % | 84 % |
+| Cataracte | 20 % | — | — |
+| DMLA | 8,4 % | 95 % | 82 % |
+| Rétinopathie hypertensive | 3 % | 87 % | 94 % |
+| Myopie forte | 20 % | 100 % | 96 % |
+
+Les pourcentages eux-mêmes restent calibrés ; seul le mot affiché change.
+
+## Reproduire
+
+```bash
+python -m vaisseaux.sources_troubles              # prépare et dédoublonne les images (data/troubles/)
+python -m vaisseaux.troubles                      # entraîne, calibre, évalue (GPU)
+python -m vaisseaux.troubles --recalculer         # refait calibrage et seuils sans réentraîner
+python scripts/evaluer_externe.py --version v0.1.1   # compare une version du registre sur JSIEC
+python scripts/tester_images.py --images <dossier> --modele nouveau=modeles/troubles.onnx:resultats/troubles/troubles_demo.json
+```
+
+L'entraînement peut aussi tourner sur Kaggle (`--sans-onnx --poids-initiaux <fichier>`), puis
+l'export se fait en local avec `--exporter modeles/troubles.pt`. Les résultats détaillés, les
+prédictions et la figure sont dans [resultats/troubles/](../resultats/troubles/).
 
 ## Dans la démo
 
-L'image importée est recadrée automatiquement sur le fond d'œil avant analyse. Le résultat est
-présenté avec une phrase synthétique, une barre de probabilité et un niveau lisible. Le pourcentage
-est une probabilité calibrée sur ODIR-5K, pas une certitude pour l'image fournie. Les résultats
-techniques sont repliés afin de garder l'interface compréhensible.
-
-La démo exécute le modèle localement dans le navigateur. Les images importées ne sont pas envoyées
-à un serveur par cette interface.
+L'image importée est recadrée automatiquement sur le fond d'œil ; une angiographie ou une photo en
+noir et blanc est refusée avec un message clair. Le résultat est présenté avec une phrase
+synthétique, une barre par trouble et un niveau lisible ; les chiffres techniques (seuils, AUROC
+en validation croisée et sur l'hôpital jamais vu) sont repliés. Le modèle s'exécute dans le
+navigateur : les images ne sont envoyées à aucun serveur.

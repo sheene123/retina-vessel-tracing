@@ -347,7 +347,7 @@ const CONSIGNES = ["", "Cliquez le point de départ sur un vaisseau", "Cliquez l
 
 const $ = (id) => document.getElementById(id);
 const toile = $("toile"), ctx = toile.getContext("2d"), survol = $("survol"), sctx = survol.getContext("2d");
-const etat = { pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
+const etat = { fichierEnAttente: null, pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
 let sessionUnet = null, sessionTroubles = null, configTroubles = null;
 const DESCRIPTIONS_TROUBLES = {
   diabete: "atteinte des petits vaisseaux due au diabète : petites hémorragies, dépôts jaunâtres",
@@ -436,7 +436,10 @@ async function demarrer() {
     } catch { /* sans fichier de fiabilité, la colonne reste vide */ }
     voile("Chargement d'une image d'exemple", "Image DRIVE et annotation de l'expert", 3);
     etat.pret = true;
-    await chargerExemple(exemples[0]);
+    // une image choisie pendant le chargement passe avant l'exemple
+    if (etat.fichierEnAttente) await chargerFichier(etat.fichierEnAttente);
+    else await chargerExemple(exemples[0]);
+    etat.fichierEnAttente = null;
     voile("");
   } catch (e) {
     console.error(e);
@@ -459,7 +462,10 @@ async function chargerExemple(id) {
 }
 
 async function chargerFichier(fichier) {
-  if (!etat.pret) return;
+  if (!etat.pret) {
+    etat.fichierEnAttente = fichier; // chargée dès que Python est prêt
+    return;
+  }
   await occuper(`Lecture de « ${fichier.name} »`, async () => {
     const octets = new Uint8Array(await fichier.arrayBuffer());
     let infos;
@@ -469,6 +475,7 @@ async function chargerFichier(fichier) {
       throw new Error("ce fichier n'est pas une image lisible. Formats acceptés : JPEG, PNG, TIFF.");
     }
     if (infos.erreur) {
+      if (infos.erreur.includes("noir et blanc")) throw new Error(infos.erreur);
       throw new Error("aucun fond d'œil n'a été trouvé dans cette image. Utilisez une photo du fond de l'œil : "
         + "un disque orangé, souvent sur fond noir (une page ou une capture d'écran qui en contient une convient aussi).");
     }
@@ -814,9 +821,15 @@ function preparerOrt() {
   ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
 }
 
-function niveau(p) {
-  if (p >= 0.5) return ["probable", "probable"];
-  if (p >= 0.2) return ["possible", "possible"];
+// seuils de la maladie (troubles.json) : « possible » dépend de la maladie, « probable » est commun
+function seuils(t) {
+  return [t.seuil_possible ?? 0.2, configTroubles?.seuil_probable ?? 0.5];
+}
+
+function niveau(p, t) {
+  const [possible, probable] = seuils(t);
+  if (p >= probable) return ["probable", "probable"];
+  if (p >= possible) return ["possible", "possible"];
   return ["peu probable", "peu"];
 }
 
@@ -848,7 +861,8 @@ async function analyserTroubles() {
 
 function afficherTroubles(resultats) {
   const tries = [...resultats].sort((a, b) => b.p - a.p);
-  const probables = tries.filter((r) => r.p >= 0.5), possibles = tries.filter((r) => r.p >= 0.2 && r.p < 0.5);
+  const probables = tries.filter((r) => niveau(r.p, r)[1] === "probable");
+  const possibles = tries.filter((r) => niveau(r.p, r)[1] === "possible");
   const noms = (liste) => liste.map((r) => r.nom.split(" (")[0].toLowerCase()).join(", ");
   let classe, titre, texte;
   if (probables.length) {
@@ -866,7 +880,7 @@ function afficherTroubles(resultats) {
   }
   let html = `<div class="verdict ${classe}"><span class="pastille-ronde" aria-hidden="true"></span><div><strong>${echapper(titre)}</strong>${echapper(texte)}</div></div>`;
   for (const r of tries) {
-    const [mot, classeNiveau] = niveau(r.p);
+    const [mot, classeNiveau] = niveau(r.p, r);
     const pourcentage = Math.round(100 * r.p);
     html += `<div class="trouble">
       <span class="titre">${echapper(r.nom)}</span>
@@ -878,13 +892,15 @@ function afficherTroubles(resultats) {
   $("resultatTroubles").innerHTML = html;
   const externe = configTroubles.ordre.some((cle) => configTroubles.troubles[cle].auroc_externe != null);
   let explication = `<p class="aide">Chaque pourcentage est une probabilité calibrée : sur des yeux d'une population comme celle
-    des bases d'entraînement, « 70 % » correspond à environ 7 yeux atteints sur 10. En dessous de 20 % : peu probable ; de 20 à 50 % :
-    possible ; au-dessus de 50 % : probable.</p><div class="tableau"><table><thead><tr><th>Maladie</th>
+    des bases d'entraînement, « 70 % » correspond à environ 7 yeux atteints sur 10. Au-dessus de 50 % : probable. Le seuil
+    « possible » dépend de la maladie : il est placé pour signaler environ 8 yeux atteints sur 10, donc plus bas pour les
+    maladies rares (quelques pourcents pour la rétinopathie hypertensive), qui atteignent rarement des pourcentages élevés.</p>
+    <div class="tableau"><table><thead><tr><th>Maladie</th><th>« Possible » dès</th>
     <th>Qualité de détection (AUROC)</th>${externe ? "<th>Sur un hôpital jamais vu (AUROC)</th>" : ""}<th>Atteints parmi les yeux jugés « probable »</th><th>Atteints repérés dès « possible »</th></tr></thead><tbody>`;
   for (const cle of configTroubles.ordre) {
     const t = configTroubles.troubles[cle], p = t.niveaux.probable;
     const colonneExterne = !externe ? "" : `<td>${t.auroc_externe == null ? "non testé" : `${fr(t.auroc_externe, 2)} (${qualiteDetection(t.auroc_externe)})`}</td>`;
-    explication += `<tr><td>${echapper(t.nom.split(" (")[0])}</td><td>${fr(t.auroc, 2)} (${qualiteDetection(t.auroc)})</td>${colonneExterne}
+    explication += `<tr><td>${echapper(t.nom.split(" (")[0])}</td><td>${fr(100 * seuils(t)[0], seuils(t)[0] < 0.1 ? 1 : 0)} %</td><td>${fr(t.auroc, 2)} (${qualiteDetection(t.auroc)})</td>${colonneExterne}
       <td>${p.part_atteints == null ? "n/d" : `${Math.round(100 * p.part_atteints)} %`}</td><td>${Math.round(100 * t.detectes_des_possible)} %</td></tr>`;
   }
   explication += `</tbody></table></div><p class="aide">Mesures faites sur des yeux que le réseau n'avait jamais vus (validation

@@ -278,6 +278,21 @@ def logits(modele, lignes: pd.DataFrame) -> np.ndarray:
 # ------------------------------------------------------------------ évaluation et calibrage
 
 
+# Niveaux affichés dans la démo. Le seuil « probable » est commun (plus d'une chance sur deux) ; le
+# seuil « possible » dépend de la maladie : placé pour signaler environ 8 yeux atteints sur 10 en
+# validation croisée, borné entre 3 % et 20 %. Sans cela, une maladie rare dans les données
+# (rétinopathie hypertensive : 2 % des yeux) n'atteint presque jamais 20 % même quand le réseau
+# classe bien les patients. Les pourcentages affichés, eux, restent calibrés.
+SENSIBILITE_VISEE, SEUIL_POSSIBLE_MIN, SEUIL_POSSIBLE_MAX, SEUIL_PROBABLE = 0.8, 0.03, 0.2, 0.5
+
+
+def seuil_possible(p_atteints: np.ndarray) -> float:
+    if not len(p_atteints):
+        return SEUIL_POSSIBLE_MAX
+    s = float(np.quantile(p_atteints, 1 - SENSIBILITE_VISEE))
+    return min(SEUIL_POSSIBLE_MAX, max(SEUIL_POSSIBLE_MIN, s))
+
+
 def calibrer(z: np.ndarray, y: np.ndarray) -> tuple[float, float]:
     """Calibrage de Platt : p = sigmoïde(a z + b), ajusté sur les prédictions hors pli."""
     ok = y >= 0
@@ -305,10 +320,15 @@ def evaluer(jeu: pd.DataFrame, z: np.ndarray, calibrage: dict, n: int = 2000) ->
                 aurocs.append(roc_auc_score(y[ok], z[ok, j], sample_weight=w))
         # à chaque niveau affiché dans la démo : part des yeux atteints parmi ceux classés ainsi
         niveaux = {}
-        for nom, bas, haut in (("peu_probable", 0, 0.2), ("possible", 0.2, 0.5), ("probable", 0.5, 1.01)):
+        seuil = seuil_possible(p[ok & (y == 1)])
+        for nom, bas, haut in (
+            ("peu_probable", 0, seuil),
+            ("possible", seuil, SEUIL_PROBABLE),
+            ("probable", SEUIL_PROBABLE, 1.01),
+        ):
             dans = ok & (p >= bas) & (p < haut)
             niveaux[nom] = {"yeux": int(dans.sum()), "part_atteints": float(y[dans].mean()) if dans.any() else None}
-        sensibilite = float(((p >= 0.2) & (y == 1)).sum() / max((y == 1).sum(), 1))
+        sensibilite = float(((p >= seuil) & (y == 1)).sum() / max((y == 1).sum(), 1))
         resultat[cle] = {
             "nom": TROUBLES[cle][0],
             "yeux": int(ok.sum()),
@@ -317,6 +337,7 @@ def evaluer(jeu: pd.DataFrame, z: np.ndarray, calibrage: dict, n: int = 2000) ->
             "ic_bas": float(np.quantile(aurocs, 0.025)),
             "ic_haut": float(np.quantile(aurocs, 0.975)),
             "detectes_des_possible": sensibilite,
+            "seuil_possible": seuil,
             "niveaux": niveaux,
         }
     return resultat
@@ -381,7 +402,9 @@ def exporter(modele, chemin: Path, exemples: np.ndarray) -> float:
     return float(np.abs(obtenu - attendu).max())
 
 
-def evaluer_externe(externe: pd.DataFrame, z: np.ndarray, calibrage: dict, n: int = 2000) -> dict:
+def evaluer_externe(
+    externe: pd.DataFrame, z: np.ndarray, calibrage: dict, seuils: dict | None = None, n: int = 2000
+) -> dict:
     """Test externe (JSIEC) : AUROC avec IC 95 % par bootstrap sur les images, et ce que voit
     l'utilisateur de la démo : part des yeux atteints signalés au moins « possible » (≥ 20 %) et
     part des yeux sains qui restent « peu probable »."""
@@ -394,6 +417,7 @@ def evaluer_externe(externe: pd.DataFrame, z: np.ndarray, calibrage: dict, n: in
             resultat[cle] = {"nom": TROUBLES[cle][0], "yeux": int(ok.sum()), "atteints": int((y == 1).sum())}
             continue
         a, b = calibrage[cle]
+        seuil = (seuils or {}).get(cle, SEUIL_POSSIBLE_MAX)
         p = 1 / (1 + np.exp(-(a * z[:, j] + b)))
         yk, zk, pk = y[ok], z[ok, j], p[ok]
         aurocs = []
@@ -408,8 +432,8 @@ def evaluer_externe(externe: pd.DataFrame, z: np.ndarray, calibrage: dict, n: in
             "auroc": float(roc_auc_score(yk, zk)),
             "ic_bas": float(np.quantile(aurocs, 0.025)),
             "ic_haut": float(np.quantile(aurocs, 0.975)),
-            "sensibilite_possible": float((pk[yk == 1] >= 0.2).mean()),
-            "specificite_peu_probable": float((pk[yk == 0] < 0.2).mean()),
+            "sensibilite_possible": float((pk[yk == 1] >= seuil).mean()),
+            "specificite_peu_probable": float((pk[yk == 0] < seuil).mean()),
         }
     return resultat
 
@@ -488,6 +512,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sans-onnx", action="store_true", help="n'exporte pas en ONNX (fait ensuite avec --exporter)")
     parser.add_argument("--exporter", type=Path, metavar="POIDS.pt", help="exporte seulement ces poids en ONNX")
     parser.add_argument(
+        "--recalculer", action="store_true", help="refait calibrage, seuils et résultats depuis les prédictions"
+    )
+    parser.add_argument(
         "--gpu-max",
         type=float,
         default=0.55,
@@ -497,6 +524,9 @@ def main(argv: list[str] | None = None) -> int:
     global POIDS_INITIAUX
     POIDS_INITIAUX = args.poids_initiaux
     args.modele.parent.mkdir(parents=True, exist_ok=True)
+    if args.recalculer:
+        recalculer(args.sortie)
+        return 0
     if args.exporter:
         ecart = exporter_depuis_poids(args.exporter, args.index, args.modele, args.architecture, args.sortie)
         print(f"exporté : {args.modele} ; parité ONNX (images réelles) : {ecart:.2e}")
@@ -547,8 +577,6 @@ def main(argv: list[str] | None = None) -> int:
             + ", ".join(f"{c} {_auroc(test[c].to_numpy(), z[dans, j]):.2f}" for j, c in enumerate(CLES))
         )
 
-    calibrage = {c: calibrer(z[:, j], jeu[c].to_numpy()) for j, c in enumerate(CLES)}
-    resultat = evaluer(jeu, z, calibrage)
     par_source = {
         s: {c: _auroc(jeu.loc[jeu["source"] == s, c].to_numpy(), z[jeu["source"] == s, j]) for j, c in enumerate(CLES)}
         for s in jeu["source"].unique()
@@ -566,26 +594,44 @@ def main(argv: list[str] | None = None) -> int:
     print("évaluation sur le test externe JSIEC et export ONNX…", flush=True)
     torch.save(final.state_dict(), args.modele.with_suffix(".pt"))
     z_externe = logits(final, externe)
-    externe_resultat = evaluer_externe(externe, z_externe, calibrage)
     exemples = np.stack([transformations(False)(Image.open(c).convert("RGB")).numpy() for c in externe["chemin"][:8]])
     ecart = None if args.sans_onnx else exporter(final, args.modele, exemples)
-    resultat_complet = {
+    infos = {
         "architecture": args.architecture,
+        "auroc_par_source": par_source,
+        "parite_onnx": ecart,
+        "duree_s": round(time.perf_counter() - debut, 1),
+    }
+    ecrire_resultats(args.sortie, jeu, z, externe, z_externe, infos)
+    return 0
+
+
+def ecrire_resultats(
+    sortie: Path, jeu: pd.DataFrame, z: np.ndarray, externe: pd.DataFrame, z_externe: np.ndarray, infos: dict
+) -> None:
+    """Calibrage, évaluations, seuils et fichiers de résultats à partir des prédictions hors pli
+    (jeu) et du modèle final (externe). Utilisée après l'entraînement et par --recalculer."""
+    calibrage = {c: calibrer(z[:, j], jeu[c].to_numpy()) for j, c in enumerate(CLES)}
+    resultat = evaluer(jeu, z, calibrage)
+    seuils = {c: resultat[c]["seuil_possible"] for c in CLES}
+    externe_resultat = evaluer_externe(externe, z_externe, calibrage, seuils)
+    resultat_complet = {
+        "architecture": infos.get("architecture", ARCHITECTURE),
         "troubles": resultat,
         "externe_jsiec": externe_resultat,
-        "auroc_par_source": par_source,
+        "auroc_par_source": infos.get("auroc_par_source", {}),
         "calibrage": calibrage,
-        "parite_onnx": ecart,
+        "parite_onnx": infos.get("parite_onnx"),
         "effectifs": {
             "images": int(len(jeu)),
             "groupes": int(jeu["groupe"].nunique()),
             "par_source": {s: int(n) for s, n in jeu["source"].value_counts().items()},
             "externe": int(len(externe)),
         },
-        "duree_s": round(time.perf_counter() - debut, 1),
+        "duree_s": infos.get("duree_s"),
     }
-    (args.sortie / "resultats.json").write_text(json.dumps(resultat_complet, indent=1, ensure_ascii=False))
-    # fichier lu par la démo : ordre des sorties, noms, calibrage, qualité de détection
+    (sortie / "resultats.json").write_text(json.dumps(resultat_complet, indent=1, ensure_ascii=False))
+    # fichier lu par la démo : ordre des sorties, noms, calibrage, seuils, qualité de détection
     noms_sources = {"odir": "ODIR-5K", "rfmid": "RFMiD", "smdg": "SMDG-19", "sjchoi86": "sjchoi86"}
     effectif_sources = jeu["source"].value_counts()
     demo = {
@@ -593,11 +639,13 @@ def main(argv: list[str] | None = None) -> int:
         "origine": f"{len(jeu):,} photos de {len(effectif_sources)} bases publiques (".replace(",", "\u202f")
         + ", ".join(noms_sources.get(s, s) for s in effectif_sources.index)
         + ")",
+        "seuil_probable": SEUIL_PROBABLE,
         "troubles": {
             c: {
                 "nom": resultat[c]["nom"],
                 "a": calibrage[c][0],
                 "b": calibrage[c][1],
+                "seuil_possible": resultat[c]["seuil_possible"],
                 "auroc": resultat[c]["auroc"],
                 "ic_bas": resultat[c]["ic_bas"],
                 "ic_haut": resultat[c]["ic_haut"],
@@ -608,15 +656,13 @@ def main(argv: list[str] | None = None) -> int:
             for c in CLES
         },
     }
-    (args.sortie / "troubles_demo.json").write_text(json.dumps(demo, indent=1, ensure_ascii=False))
-    jeu.assign(**{f"logit_{c}": z[:, j] for j, c in enumerate(CLES)}).to_csv(
-        args.sortie / "predictions.csv", index=False
-    )
+    (sortie / "troubles_demo.json").write_text(json.dumps(demo, indent=1, ensure_ascii=False))
+    jeu.assign(**{f"logit_{c}": z[:, j] for j, c in enumerate(CLES)}).to_csv(sortie / "predictions.csv", index=False)
     externe.assign(**{f"logit_{c}": z_externe[:, j] for j, c in enumerate(CLES)}).to_csv(
-        args.sortie / "predictions_externe.csv", index=False
+        sortie / "predictions_externe.csv", index=False
     )
-    figure(resultat, args.sortie / "auroc_par_trouble.png", externe_resultat)
-    print("trouble        interne (IC 95 %)        externe JSIEC (IC 95 %)")
+    figure(resultat, sortie / "auroc_par_trouble.png", externe_resultat)
+    print("trouble        seuil « possible »   interne (IC 95 %)        externe JSIEC (IC 95 %)")
     for c in CLES:
         r, e = resultat[c], externe_resultat[c]
         texte_externe = (
@@ -624,10 +670,26 @@ def main(argv: list[str] | None = None) -> int:
             if "auroc" in e
             else "—"
         )
-        print(f"{c:13s}  {r['auroc']:.3f} [{r['ic_bas']:.2f} ; {r['ic_haut']:.2f}]   {texte_externe}")
+        print(
+            f"{c:13s}  {100 * r['seuil_possible']:5.1f} %   {r['auroc']:.3f} [{r['ic_bas']:.2f} ; {r['ic_haut']:.2f}]"
+            f"   {texte_externe}"
+        )
+    ecart = infos.get("parite_onnx")
     parite = "export ONNX à faire avec --exporter" if ecart is None else f"parité ONNX (images réelles) : {ecart:.2e}"
-    print(f"{parite} ; durée {resultat_complet['duree_s']} s")
-    return 0
+    print(f"{parite} ; durée {infos.get('duree_s')} s")
+
+
+def recalculer(sortie: Path) -> None:
+    """Refait calibrage, seuils et évaluations à partir des prédictions déjà enregistrées, sans
+    réentraîner (par exemple après un entraînement fait sur Kaggle)."""
+    anciens = json.loads((sortie / "resultats.json").read_text())
+    jeu = pd.read_csv(sortie / "predictions.csv", low_memory=False)
+    externe = pd.read_csv(sortie / "predictions_externe.csv", low_memory=False)
+    z = jeu[[f"logit_{c}" for c in CLES]].to_numpy(dtype=np.float32)
+    z_externe = externe[[f"logit_{c}" for c in CLES]].to_numpy(dtype=np.float32)
+    jeu = jeu.drop(columns=[f"logit_{c}" for c in CLES])
+    externe = externe.drop(columns=[f"logit_{c}" for c in CLES])
+    ecrire_resultats(sortie, jeu, z, externe, z_externe, anciens)
 
 
 if __name__ == "__main__":
