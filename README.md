@@ -183,14 +183,21 @@ dépend du trouble, pour que les troubles rares soient signalés eux aussi. Ces 
 la capacité à reconnaître des annotations de jeux de données, pas la présence certaine d'une
 maladie chez une personne.
 
-| Trouble | AUROC validation croisée | AUROC hôpital jamais vu (JSIEC) | Version 0.1.1 sur JSIEC |
-|---|---|---|---|
-| Rétinopathie diabétique | 0,90 [0,89 ; 0,91] | **0,94** [0,91 ; 0,97] | 0,92 |
-| Glaucome | 0,90 [0,89 ; 0,90] | **1,00** [0,99 ; 1,00] | 0,94 |
-| Cataracte | 0,99 [0,98 ; 0,99] | pas de cas | — |
-| DMLA | 0,94 [0,93 ; 0,95] | **0,95** [0,93 ; 0,97] | 0,92 |
-| Rétinopathie hypertensive | 0,86 [0,83 ; 0,89] | **0,98** [0,96 ; 0,99] | 0,90 |
-| Myopie forte | 1,00 [1,00 ; 1,00] | **1,00** [1,00 ; 1,00] | 0,98 |
+| Trouble | AUROC validation croisée | AUROC hôpital jamais vu (JSIEC) |
+|---|---|---|
+| Rétinopathie diabétique | 0,89 | 0,947 (106 cas) |
+| Glaucome | 0,91 | 0,998 (13 cas) |
+| Cataracte | 0,98 | pas de cas |
+| DMLA | 0,94 | 0,966 (74 cas) |
+| Rétinopathie hypertensive | 0,86 | 0,945 (15 cas) |
+| Myopie forte | 1,00 | 1,000 (54 cas) |
+
+Version 0.3.0 : un professeur RETFound (modèle de fondation de la rétine) transmet son avis sur le glaucome
+au petit réseau de la démo ; sur les gros plans serrés de la papille, le glaucome passe de 0,872 à
+1,000 d'AUROC. En contrepartie, la rétinopathie hypertensive recule sur JSIEC (15 cas) : décision
+de publication et explications dans [docs/troubles.md](docs/troubles.md). La démo montre aussi les zones
+regardées par le réseau (cartes de chaleur), contrôle la qualité de la photo et propose des yeux malades à
+diagnostic connu. Les valeurs proches de 1 sur JSIEC sont optimistes (cas typiques, peu de cas).
 
 La méthodologie, les effectifs et les résultats complets sont dans
 [docs/troubles.md](docs/troubles.md). Les sorties du modèle sont versionnées dans
@@ -252,6 +259,7 @@ resultats/           résultats versionnés du dernier benchmark
 - [x] Rétinopathie hypertensive sur ODIR-5K : réseau 0,82, marqueurs 0,72 d'AUROC
 - [x] Modèle ONNX des six troubles de l'œil, probabilités calibrées et panneau simplifié dans la démo
 - [x] Troubles entraînés sur quatre bases dédoublonnées et testés sur un hôpital jamais vu (JSIEC), seuils adaptés aux troubles rares
+- [x] Professeur RETFound pour le glaucome (distillation), cartes de chaleur, contrôle de qualité de la photo, yeux malades à diagnostic connu (v0.3.0)
 - [ ] Améliorer la précision des marqueurs (plus de données, marqueurs artère/veine) avant tout
       usage lié au risque cardiovasculaire
 - [ ] Prétraitement : réglage adaptatif du débruitage, correction d'illumination

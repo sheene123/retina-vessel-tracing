@@ -95,6 +95,39 @@ Images : Joint Shantou International Eye Centre (Cen et al., *Nature Communicati
 - dans RFMiD, le glaucome est approché par l'excavation de la papille ;
 - les gros plans très serrés sur la papille restent difficiles pour le glaucome.
 
+## Version 0.3.0 : professeur RETFound pour le glaucome
+
+Le point faible de la version 0.2.0 : sur un gros plan serré de la papille (photo prise de près, papille
+qui remplit l'image), le glaucome n'était plus reconnu (AUROC 0,872 sur JSIEC, 54 % des cas signalés).
+
+- **Professeur** ([professeur.py](../src/vaisseaux/professeur.py)) : RETFound (ViT-L DINOv2, pré-entraîné
+  sur ~1,6 million de fonds d'œil ; poids vérifiés par empreinte, chargés en mode « poids seulement »
+  puis convertis en safetensors) affiné sur le glaucome en deux moitiés croisées, avec des gros plans de
+  la papille. Seul, il atteint 0,910 en interne et 1,000 sur les gros plans JSIEC.
+- **Élève** : le réseau de la démo apprend aussi l'avis calibré du professeur (distillation) et voit des
+  gros plans de la papille pendant l'entraînement.
+
+| Trouble | AUROC validation croisée | Fausses alertes au seuil « possible » | AUROC JSIEC (v0.3.0) | AUROC JSIEC (v0.2.0) |
+|---|---|---|---|---|
+| Rétinopathie diabétique | 0,89 | 22 % | 0,947 (106 cas) | 0,942 |
+| Glaucome | 0,91 | 16 % | 0,998 (13 cas) | 0,997 |
+| Cataracte | 0,98 | 2 % | pas de cas | — |
+| DMLA | 0,94 | 6 % | 0,966 (74 cas) | 0,953 |
+| Rétinopathie hypertensive | 0,86 | 15 % | 0,945 (15 cas) | 0,979 |
+| Myopie forte | 1,00 | 1 % | 1,000 (54 cas) | 0,999 |
+
+Glaucome sur gros plans de la papille (JSIEC) : **AUROC 1,000**, 100 % des cas signalés
+(v0.2.0 : 0,872 et 54 %).
+
+**Décision de publication.** La comparaison automatique avec la v0.2.0 a relevé une baisse sur la
+rétinopathie hypertensive dans JSIEC (0,979 → 0,945, significative en bootstrap apparié, mais sur 15 cas
+seulement ; stable en validation croisée sur 193 cas). La version a été publiée malgré tout pour le gain
+sur le glaucome, décision écrite dans la fiche du registre. Cause probable : sur les gros plans,
+l'étiquette de ce trouble rare était ignorée ; l'essai suivant ne recadre plus les images positives pour
+un trouble hors papille. Retour à la v0.2.0 : `gh workflow run deploiement -f version=v0.2.0`.
+
+Limite : la photo de manuel très serrée testée par l'utilisateur reste manquée (14 %, seuil 18 %).
+
 ## Niveaux affichés dans la démo
 
 Le seuil « probable » est commun : plus d'une chance sur deux. Le seuil « possible » dépend du
