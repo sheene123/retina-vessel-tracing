@@ -109,4 +109,9 @@ jobs:
             cat validation.json
             echo '```'
           } > notes.md
-          gh release create "$VERSION" --repo "${{ github.repository }}" --title "Tracé des vaisseaux $VERSION" --notes-file notes.md validation.json
+          # relance manuelle sur une version déjà publiée (mise à jour de la démo seule) : pas de nouvelle release
+          if gh release view "$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release $VERSION déjà publiée : démo et image mises à jour, release inchangée" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh release create "$VERSION" --repo "${{ github.repository }}" --title "Tracé des vaisseaux $VERSION" --notes-file notes.md validation.json
+          fi
