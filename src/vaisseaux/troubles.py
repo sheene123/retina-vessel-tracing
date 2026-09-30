@@ -94,7 +94,9 @@ ARCHITECTURE = "efficientnet_b0.ra_in1k"
 
 # Gros plans de la papille (photos prises de près) : une part des images d'entraînement est recadrée
 # sur la papille ; sur ces gros plans, seuls les troubles visibles autour de la papille gardent leur
-# étiquette (les lésions de la macula ou de la périphérie sortent du cadre).
+# étiquette (les lésions de la macula ou de la périphérie sortent du cadre). Les images positives
+# pour un trouble hors papille ne sont jamais recadrées (essai 1 : sans cette règle, la rétinopathie
+# hypertensive, rare, reculait sur le test externe).
 PART_GROS_PLANS, CADRAGES_GROS_PLAN, TROUBLES_PAPILLE = 0.2, (0.18, 0.6), ("glaucome", "myopie")
 # Distillation : la sortie glaucome apprend aussi l'avis d'un professeur (RETFound, voir
 # vaisseaux.professeur), donné pour chaque image par un modèle qui ne l'a pas vue à l'entraînement.
@@ -214,7 +216,11 @@ def _chargeur(
         def __getitem__(self, i: int):
             image, cible = Image.open(chemins[i]).convert("RGB"), cibles[i].clone()
             part = gros_plan
-            if entrainement and random.random() < part_gros_plans:
+            # jamais de gros plan sur une image positive pour un trouble visible hors de la papille :
+            # son étiquette serait ignorée, et les troubles rares (rétinopathie hypertensive)
+            # perdraient une part de leurs rares exemples
+            positif_hors_papille = bool((cible[hors_papille] == 1).any())
+            if entrainement and not positif_hors_papille and random.random() < part_gros_plans:
                 part = random.uniform(*CADRAGES_GROS_PLAN)
                 cible[hors_papille] = -1
             if part:

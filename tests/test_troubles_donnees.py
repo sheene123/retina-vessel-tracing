@@ -54,3 +54,20 @@ def test_seuil_possible_par_trouble():
     assert SEUIL_POSSIBLE_MIN <= s <= SEUIL_POSSIBLE_MAX and abs((p >= s).mean() - 0.8) < 0.02
     assert seuil_possible(np.full(50, 0.9)) == SEUIL_POSSIBLE_MAX  # trouble fréquent : 20 % au plus
     assert seuil_possible(np.full(50, 0.001)) == SEUIL_POSSIBLE_MIN  # trouble rare : 3 % au moins
+
+
+def test_pas_de_gros_plan_sur_un_positif_hors_papille():
+    pytest.importorskip("sklearn")
+    from pathlib import Path
+
+    from vaisseaux import troubles as tr
+
+    index = Path("data/troubles/index.csv")
+    if not index.exists():
+        pytest.skip("images préparées absentes")
+    lignes = tr.lire_index(index).query("source == 'odir'").head(40).copy()
+    lignes["diabete"] = 1  # toutes positives pour un trouble hors papille
+    charge = tr._chargeur(lignes, entrainement=True, images_par_epoque=32, part_gros_plans=1.0)
+    charge.num_workers = 0
+    _, cibles = next(iter(charge))
+    assert (cibles[:, tr.CLES.index("diabete")] == 1).all()  # aucune étiquette effacée par un gros plan
