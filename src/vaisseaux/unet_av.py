@@ -260,7 +260,12 @@ def entrainer(
     graine: int = 0,
     travailleurs: int = 4,
     premier_unet: Path | None = None,
+    sauvegarde: Path | None = None,
 ) -> tuple[UNetAV, dict]:
+    """Entraîne et garde l'itération au meilleur score de validation, enregistrée dans `sauvegarde`
+    à chaque progrès (un arrêt brutal ne perd donc pas le meilleur modèle). Si les calculs
+    divergent (valeurs non finies), on repart du meilleur état, trois fois au plus, puis on
+    s'arrête en gardant le meilleur modèle."""
     torch.manual_seed(graine)
     appareil = "cuda" if torch.cuda.is_available() else "cpu"
     lignes = lire_index(donnees, images)
@@ -274,13 +279,24 @@ def entrainer(
         FluxPatchs(exemples, graine), batch_size=lot, num_workers=travailleurs, persistent_workers=travailleurs > 0
     )
     modele = UNetAV().to(appareil).to(memory_format=torch.channels_last)
-    optimiseur = torch.optim.AdamW(modele.parameters(), lr=2e-3, weight_decay=1e-4)
-    planning = torch.optim.lr_scheduler.OneCycleLR(optimiseur, max_lr=2e-3, total_steps=iterations, pct_start=0.1)
+    optimiseur = torch.optim.AdamW(modele.parameters(), lr=1e-3, weight_decay=1e-4)
+    planning = torch.optim.lr_scheduler.OneCycleLR(optimiseur, max_lr=1e-3, total_steps=iterations, pct_start=0.1)
     amp = appareil == "cuda"
     echelle = torch.amp.GradScaler(enabled=amp)
     meilleur, etat_meilleur, historique = -1.0, None, []
     debut = time.perf_counter()
-    pertes_invalides = 0
+    pertes_invalides, reprises, arret = 0, [], None
+
+    def reprendre(it: int, raison: str) -> bool:
+        """Revient au meilleur état ; renvoie False s'il faut arrêter."""
+        reprises.append({"iteration": it, "raison": raison})
+        print(f"itération {it} : {raison} -> retour au meilleur état ({len(reprises)}/3)", flush=True)
+        if etat_meilleur is None or len(reprises) > 3:
+            return False
+        modele.load_state_dict(etat_meilleur)
+        optimiseur.state.clear()
+        return True
+
     for it, (x, lab, msk) in enumerate(flux, start=1):
         # garde-fou : une seule valeur hors de la plage du float16 abîme définitivement les
         # statistiques de normalisation du réseau (entraînement du 1er octobre 2026 perdu ainsi)
@@ -309,19 +325,25 @@ def entrainer(
         if torch.isfinite(perte):
             pertes_invalides = 0
             echelle.scale(perte).backward()
+            echelle.unscale_(optimiseur)
+            nn.utils.clip_grad_norm_(modele.parameters(), 1.0)  # évite les pas démesurés qui font diverger
             echelle.step(optimiseur)
             echelle.update()
         else:
             pertes_invalides += 1
-            if pertes_invalides >= 50:
-                raise RuntimeError(f"perte non finie 50 fois de suite (itération {it}) : entraînement arrêté")
+            if pertes_invalides >= 5:
+                pertes_invalides = 0
+                if not reprendre(it, "perte non finie 5 fois de suite"):
+                    arret = it
+                    break
         planning.step()
         if it in (100, 500) or it % 1000 == 0 or it == iterations:
             abimes = [
                 k for k, v in modele.state_dict().items() if v.is_floating_point() and not torch.isfinite(v).all()
             ]
-            if abimes:
-                raise RuntimeError(f"poids ou statistiques non finis à l'itération {it} : {abimes[:3]}")
+            if abimes and not reprendre(it, f"poids ou statistiques non finis ({abimes[0]})"):
+                arret = it
+                break
             res = evaluer(modele, validation)
             score = _score_validation(res)
             historique.append({"iteration": it, "perte": float(perte), "score": score, "validation": res})
@@ -338,6 +360,9 @@ def entrainer(
             if np.isfinite(score) and score > meilleur:
                 meilleur = score
                 etat_meilleur = {k: v.detach().clone() for k, v in modele.state_dict().items()}
+                if sauvegarde is not None:
+                    sauvegarde.parent.mkdir(parents=True, exist_ok=True)
+                    torch.save(etat_meilleur, sauvegarde)
         if it >= iterations:
             break
     if etat_meilleur is None:
@@ -345,6 +370,11 @@ def entrainer(
     modele.load_state_dict(etat_meilleur)
     infos = {
         "score_validation": meilleur,
+        "iteration_retenue": max((h for h in historique if np.isfinite(h["score"])), key=lambda h: h["score"])[
+            "iteration"
+        ],
+        "arret_anticipe": arret,
+        "reprises": reprises,
         "iterations": iterations,
         "lot": lot,
         "taille_patch": TAILLE_PATCH,
@@ -411,7 +441,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ONNX écrit dans {onnx}, écart maximal avec PyTorch : {ecart:.2e}")
         return 0 if ecart < 1e-3 else 1
     modele, infos = entrainer(
-        args.donnees, args.images, args.iterations, travailleurs=args.travailleurs, premier_unet=args.premier_unet
+        args.donnees,
+        args.images,
+        args.iterations,
+        travailleurs=args.travailleurs,
+        premier_unet=args.premier_unet,
+        sauvegarde=args.sortie,
     )
     args.sortie.parent.mkdir(parents=True, exist_ok=True)
     args.resultats.parent.mkdir(parents=True, exist_ok=True)
