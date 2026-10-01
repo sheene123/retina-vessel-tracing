@@ -86,11 +86,15 @@ def pretraiter(
     return CartesPretraitement(vert=vert, rehaussee=image, vaisseaux=vaisseaux)
 
 
+ECART_MIN = 0.02  # un canal presque uniforme (bleu très sombre) donnerait des valeurs énormes
+BORNE_ENTREE = 8.0
+
+
 def normaliser_pour_reseau(rgb: np.ndarray, masque: np.ndarray, multiple: int = 16) -> np.ndarray:
     """Entrée du U-Net : image normalisée canal par canal dans le champ de vue, (3, H, W),
     complétée par des zéros jusqu'à un multiple de `multiple` (sous-échantillonnages du réseau)."""
     x = rgb.astype(np.float32) / 255.0
-    moyenne, ecart = x[masque].mean(axis=0), x[masque].std(axis=0) + 1e-6
-    x = (((x - moyenne) / ecart) * masque[..., None]).transpose(2, 0, 1)
+    moyenne, ecart = x[masque].mean(axis=0), np.maximum(x[masque].std(axis=0), ECART_MIN)
+    x = (np.clip((x - moyenne) / ecart, -BORNE_ENTREE, BORNE_ENTREE) * masque[..., None]).transpose(2, 0, 1)
     h, w = masque.shape
     return np.pad(x, ((0, 0), (0, -h % multiple), (0, -w % multiple))).astype(np.float32)

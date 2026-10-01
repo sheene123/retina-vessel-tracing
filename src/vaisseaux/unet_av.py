@@ -32,7 +32,7 @@ from PIL import Image, ImageFilter
 from torch import nn
 from torch.nn import functional as F
 
-from .pretraitement import normaliser_pour_reseau
+from .pretraitement import BORNE_ENTREE, ECART_MIN, normaliser_pour_reseau
 from .unet import _bloc
 
 MULTIPLE = 32
@@ -145,7 +145,7 @@ def exemple_augmente(
     # statistiques de normalisation sur toute l'image (comme la démo), estimées sur une image réduite
     reduite = _couleur(rgb[::4, ::4], couleur, pas=4)
     m = masque[::4, ::4]
-    moyenne, ecart = reduite[m].mean(axis=0), reduite[m].std(axis=0) + 1e-6
+    moyenne, ecart = reduite[m].mean(axis=0), np.maximum(reduite[m].std(axis=0), ECART_MIN)
 
     image = Image.fromarray(rgb[fenetre]).resize((taille, taille), Image.Resampling.BILINEAR)
     lab = np.asarray(Image.fromarray(etiquette[fenetre]).resize((taille, taille), Image.Resampling.NEAREST))
@@ -160,7 +160,8 @@ def exemple_augmente(
         x = np.asarray(flou).astype(np.float32) / 255.0
     if rng.random() < 0.3:  # bruit du capteur
         x = x + rng.normal(0, rng.uniform(0.005, 0.03), x.shape).astype(np.float32)
-    x = (((x - moyenne) / ecart) * msk[..., None]).astype(np.float32).transpose(2, 0, 1)
+    x = np.clip((x - moyenne) / ecart, -BORNE_ENTREE, BORNE_ENTREE) * msk[..., None]
+    x = x.astype(np.float32).transpose(2, 0, 1)
     k = int(rng.integers(4))
     x, lab, msk = np.rot90(x, k, axes=(1, 2)), np.rot90(lab, k), np.rot90(msk, k)
     if rng.random() < 0.5:
@@ -279,7 +280,11 @@ def entrainer(
     echelle = torch.amp.GradScaler(enabled=amp)
     meilleur, etat_meilleur, historique = -1.0, None, []
     debut = time.perf_counter()
+    pertes_invalides = 0
     for it, (x, lab, msk) in enumerate(flux, start=1):
+        # garde-fou : une seule valeur hors de la plage du float16 abîme définitivement les
+        # statistiques de normalisation du réseau (entraînement du 1er octobre 2026 perdu ainsi)
+        x = torch.nan_to_num(x, 0.0).clamp(-BORNE_ENTREE, BORNE_ENTREE)
         x = x.to(appareil, non_blocking=True).to(memory_format=torch.channels_last)
         lab, msk = lab.to(appareil).long(), msk.to(appareil).float()
         vaisseau = (lab > 0).float()
@@ -301,11 +306,22 @@ def entrainer(
             ).sum() / n_v.clamp(min=1)
             perte = perte + perte_av
         optimiseur.zero_grad(set_to_none=True)
-        echelle.scale(perte).backward()
-        echelle.step(optimiseur)
-        echelle.update()
+        if torch.isfinite(perte):
+            pertes_invalides = 0
+            echelle.scale(perte).backward()
+            echelle.step(optimiseur)
+            echelle.update()
+        else:
+            pertes_invalides += 1
+            if pertes_invalides >= 50:
+                raise RuntimeError(f"perte non finie 50 fois de suite (itération {it}) : entraînement arrêté")
         planning.step()
-        if it % 1000 == 0 or it == iterations:
+        if it in (100, 500) or it % 1000 == 0 or it == iterations:
+            abimes = [
+                k for k, v in modele.state_dict().items() if v.is_floating_point() and not torch.isfinite(v).all()
+            ]
+            if abimes:
+                raise RuntimeError(f"poids ou statistiques non finis à l'itération {it} : {abimes[:3]}")
             res = evaluer(modele, validation)
             score = _score_validation(res)
             historique.append({"iteration": it, "perte": float(perte), "score": score, "validation": res})
@@ -319,11 +335,13 @@ def entrainer(
                 + f"  ({ecoule / 60:.0f} min, reste ≈ {ecoule / it * (iterations - it) / 60:.0f} min)",
                 flush=True,
             )
-            if score > meilleur:
+            if np.isfinite(score) and score > meilleur:
                 meilleur = score
                 etat_meilleur = {k: v.detach().clone() for k, v in modele.state_dict().items()}
         if it >= iterations:
             break
+    if etat_meilleur is None:
+        raise RuntimeError("aucune itération valide : pas de modèle à garder")
     modele.load_state_dict(etat_meilleur)
     infos = {
         "score_validation": meilleur,
