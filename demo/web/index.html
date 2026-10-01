@@ -270,6 +270,8 @@
       expert : le tracé et les mesures y sont comparés à l'expert.</p>
     <h3 class="sous-titre">Yeux malades, diagnostic connu</h3>
     <div class="choix-image choix-malades" id="exemplesMalades"></div>
+    <!-- liste des exemples, écrite ici au déploiement (scripts/deployer_space.py) : pas de requête à part -->
+    <script type="application/json" id="exemplesMaladesDonnees">null</script>
     <p class="aide">Photos d'un hôpital que le réseau n'a jamais vu (JSIEC, Chine), tirées au hasard dans chaque
       catégorie, sans choisir celles où il a raison. Après « Analyser l'image », le diagnostic de l'image s'affiche à
       côté de la réponse du réseau.</p>
@@ -507,10 +509,19 @@ async function chargerExemple(id) {
 let exemplesMalades = [];
 
 async function preparerExemplesMalades() {
-  try {
-    exemplesMalades = await (await fetch("exemples/exemples.json")).json();
-  } catch {
-    return; // sans le dossier d'exemples, le groupe reste vide
+  // liste intégrée à la page au déploiement ; sinon (développement local), fichier à part, avec
+  // nouvelles tentatives : dans la page Hugging Face, une requête isolée échoue parfois
+  exemplesMalades = JSON.parse($("exemplesMaladesDonnees").textContent || "null");
+  for (let essai = 0; !exemplesMalades && essai < 3; essai++) {
+    try {
+      const reponse = await fetch("exemples/exemples.json", { cache: "no-store" });
+      if (reponse.ok) exemplesMalades = await reponse.json();
+    } catch { /* nouvel essai */ }
+    if (!exemplesMalades) await new Promise((fin) => setTimeout(fin, 1500 * (essai + 1)));
+  }
+  if (!exemplesMalades) {
+    $("exemplesMalades").innerHTML = '<p class="aide">Exemples indisponibles pour le moment : rechargez la page.</p>';
+    return;
   }
   const conteneur = $("exemplesMalades");
   conteneur.replaceChildren();

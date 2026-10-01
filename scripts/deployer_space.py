@@ -7,6 +7,7 @@ python scripts/deployer_space.py --space <utilisateur>/retina-vessel-tracing
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import tempfile
@@ -41,6 +42,14 @@ def main() -> int:
         exemples = RACINE / "demo" / "web" / "exemples"  # yeux malades à diagnostic connu (JSIEC)
         if exemples.is_dir():
             shutil.copytree(exemples, site / "exemples")
+            # liste écrite directement dans la page : les boutons s'affichent sans requête à part
+            page = (site / "index.html").read_text()
+            balise = '<script type="application/json" id="exemplesMaladesDonnees">null</script>'
+            liste = json.dumps(json.loads((exemples / "exemples.json").read_text()), ensure_ascii=False)
+            liste = liste.replace("</", "<\\/")  # jamais de « </script> » dans la liste
+            if balise in page:
+                page = page.replace(balise, balise.replace(">null<", ">" + liste + "<"))
+                (site / "index.html").write_text(page)
         if args.depuis_registre:
             # modèles d'une version du registre (déploiement continu)
             from huggingface_hub import hf_hub_download
