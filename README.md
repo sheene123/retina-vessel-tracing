@@ -185,17 +185,17 @@ maladie chez une personne.
 
 | Trouble | AUROC validation croisée | AUROC hôpital jamais vu (JSIEC) |
 |---|---|---|
-| Rétinopathie diabétique | 0,89 | 0,947 (106 cas) |
-| Glaucome | 0,91 | 0,998 (13 cas) |
+| Rétinopathie diabétique | 0,90 | 0,943 (106 cas) |
+| Glaucome | 0,90 | 1,000 (13 cas) |
 | Cataracte | 0,98 | pas de cas |
-| DMLA | 0,94 | 0,966 (74 cas) |
-| Rétinopathie hypertensive | 0,86 | 0,945 (15 cas) |
+| DMLA | 0,94 | 0,953 (74 cas) |
+| Rétinopathie hypertensive | 0,86 | 0,964 (15 cas) |
 | Myopie forte | 1,00 | 1,000 (54 cas) |
 
 Version 0.3.0 : un professeur RETFound (modèle de fondation de la rétine) transmet son avis sur le glaucome
 au petit réseau de la démo ; sur les gros plans serrés de la papille, le glaucome passe de 0,872 à
-1,000 d'AUROC. En contrepartie, la rétinopathie hypertensive recule sur JSIEC (15 cas) : décision
-de publication et explications dans [docs/troubles.md](docs/troubles.md). La démo montre aussi les zones
+1,000 d'AUROC. La version 0.3.2 garde ce gain sans recul significatif sur les autres troubles
+face à la version d'avant ([docs/troubles.md](docs/troubles.md)). La démo montre aussi les zones
 regardées par le réseau (cartes de chaleur), contrôle la qualité de la photo et propose des yeux malades à
 diagnostic connu. Les valeurs proches de 1 sur JSIEC sont optimistes (cas typiques, peu de cas).
 

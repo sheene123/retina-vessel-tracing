@@ -126,7 +126,29 @@ sur le glaucome, décision écrite dans la fiche du registre. Cause probable : s
 l'étiquette de ce trouble rare était ignorée ; l'essai suivant ne recadre plus les images positives pour
 un trouble hors papille. Retour à la v0.2.0 : `gh workflow run deploiement -f version=v0.2.0`.
 
-Limite : la photo de manuel très serrée testée par l'utilisateur reste manquée (14 %, seuil 18 %).
+Limite : la photo de manuel très serrée testée par l'utilisateur restait manquée (14 %, seuil 18 %) ; voir la version 0.3.2.
+
+## Version 0.3.2 : même professeur, sans perdre l'hypertension
+
+Essai suivant, avec une seule règle en plus : une image positive pour un trouble visible hors de la
+papille (diabète, DMLA, hypertension, cataracte) n'est jamais recadrée en gros plan, pour que ces
+troubles gardent tous leurs exemples. Comparaison sur JSIEC, mêmes images pour les trois modèles :
+
+| Trouble | v0.2.0 | v0.3.0 / v0.3.1 | v0.3.2 |
+|---|---|---|---|
+| Rétinopathie diabétique | 0,942 | 0,947 | 0,943 |
+| Glaucome (image entière) | 0,997 | 0,998 | 1,000 |
+| Glaucome (gros plan serré) | 0,872 | 1,000 | 0,997 |
+| DMLA | 0,953 | 0,966 | 0,953 |
+| Rétinopathie hypertensive | 0,979 | 0,945 | 0,964 |
+| Myopie forte | 0,999 | 1,000 | 1,000 |
+
+Test apparié (bootstrap sur les mêmes images) : face à la v0.2.0, la v0.3.2 ne recule
+significativement sur aucun trouble (hypertension -0,015, IC 95 % [-0,043 ; +0,004]) et progresse sur
+le glaucome ; face à la v0.3.1, elle rend le gain sur la DMLA (-0,013, significatif). En validation
+croisée, tout est stable (DMLA 0,943, hypertension 0,863). La photo de manuel très serrée testée par
+l'utilisateur est désormais repérée (glaucome « possible », 22 %, seuil 18 %). Publiée en v0.3.2 :
+aucune baisse significative face au modèle d'avant RETFound, le gain sur le glaucome conservé.
 
 ## Niveaux affichés dans la démo
 
