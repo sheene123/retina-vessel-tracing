@@ -225,18 +225,40 @@ def knudtson(largeurs: list[float] | np.ndarray, coefficient: float) -> float:
 # ---------------------------------------------------------------- mesures dans les zones
 
 MESURES_ZONES = ("calibre_zone_b", "calibre_zone_b_um", "tortuosite_zone_c", "densite_zone_c", "longueur_zone_c")
+MESURES_AV = ("crae_um", "crve_um", "avr")
+NB_MIN_KNUDTSON = 3  # en dessous de 3 artères (ou veines) mesurables, CRAE (ou CRVE) n'est pas calculé
 
 
-def mesurer_zones(vaisseaux: np.ndarray, disque: dict) -> dict[str, float]:
-    """Mesures comparables d'une photo à l'autre, sans distinguer artères et veines (le classement
-    sans apprentissage n'est pas assez fiable, voir docs/etude_metriques.md) :
+def calibres_av(segs: list[dict], arteres: np.ndarray, diametre_papille: float) -> dict[str, float]:
+    """CRAE, CRVE (µm estimés) et AVR à partir des segments de la zone B. `arteres` donne, pour
+    chaque pixel, la probabilité « artère plutôt que veine » (NaN là où on ne sait pas) : un segment
+    est une artère si la moyenne sur son squelette dépasse 0,5 ; il est ignoré si moins de la moitié
+    de ses pixels sont renseignés."""
+    largeurs = {True: [], False: []}
+    for s in segs:
+        v = arteres[s["lignes"], s["colonnes"]]
+        connus = np.isfinite(v)
+        if connus.mean() < 0.5:
+            continue
+        largeurs[bool(v[connus].mean() >= 0.5)].append(s["largeur"])
+    crae = knudtson(largeurs[True], KNUDTSON_ARTERES) if len(largeurs[True]) >= NB_MIN_KNUDTSON else float("nan")
+    crve = knudtson(largeurs[False], KNUDTSON_VEINES) if len(largeurs[False]) >= NB_MIN_KNUDTSON else float("nan")
+    echelle = DIAMETRE_PAPILLE_UM / diametre_papille
+    return {"crae_um": crae * echelle, "crve_um": crve * echelle, "avr": crae / crve}
+
+
+def mesurer_zones(vaisseaux: np.ndarray, disque: dict, arteres: np.ndarray | None = None) -> dict[str, float]:
+    """Mesures comparables d'une photo à l'autre :
 
     - calibre_zone_b : largeur moyenne des 6 plus gros vaisseaux qui traversent la zone B, en
       diamètres de papille (et en µm estimés, 1 DP ≈ 1 800 µm) ;
     - tortuosite_zone_c : tortuosité pondérée (longs segments) dans la zone C ;
     - densite_zone_c : part de la zone C couverte par les vaisseaux ;
     - longueur_zone_c : longueur des vaisseaux par surface de la zone C, en DP⁻¹ (sans unité de
-      pixel : même valeur quelle que soit la résolution).
+      pixel : même valeur quelle que soit la résolution) ;
+    - avec `arteres` (probabilité « artère » par pixel, sortie du U-Net multi-appareils) : CRAE,
+      CRVE et AVR (voir `calibres_av`). Le classement sans apprentissage n'est pas assez fiable
+      pour cela (docs/mesures_zones.md).
     """
     from skimage.morphology import skeletonize
 
@@ -250,7 +272,8 @@ def mesurer_zones(vaisseaux: np.ndarray, disque: dict) -> dict[str, float]:
     dans_c = vaisseaux & zone_c
     squelette_c = skeletonize(dans_c)
     surface = zone_c.sum()
-    return {
+    av = calibres_av(segs, arteres, dp) if arteres is not None else {}
+    return av | {
         "calibre_zone_b": calibre,
         "calibre_zone_b_um": calibre * DIAMETRE_PAPILLE_UM,
         "tortuosite_zone_c": tortuosite_ponderee(squelette_c, longueur_min=max(20, int(0.4 * dp))),

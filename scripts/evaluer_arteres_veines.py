@@ -1,15 +1,18 @@
-"""Évalue le classement artères / veines sans apprentissage et l'AVR face aux annotations d'experts.
+"""Évalue le classement artères / veines et l'AVR face aux annotations d'experts.
 
-Bases annotées (artères en rouge, veines en bleu) : DRIVE_AV (RITE), HRF-AV et LES-AV. Aucun modèle
-n'est entraîné ; les réglages (par quadrant ou non) sont choisis sur les parties « training » et le
-résultat est rapporté sur les parties « test ». Les images sont réduites à 800 pixels au plus,
-comme dans la démo.
+Bases annotées (artères en rouge, veines en bleu) : DRIVE_AV (RITE), HRF-AV et LES-AV. Méthodes :
 
-Deux conditions : vaisseaux de l'expert (mesure la qualité du seul classement) et vaisseaux du U-Net
-(chaîne complète de la démo). La référence est calculée avec les vaisseaux et les étiquettes de
-l'expert.
+- sans apprentissage (« quadrants », « global ») : regroupement en deux classes selon la clarté ;
+  réglages choisis sur les parties « training » ;
+- « modele » : sortie « arteres » du U-Net multi-appareils (unet_av.onnx), si le modèle l'a. Ce
+  modèle a appris sur les parties « training » : seules les parties « test » comptent pour lui.
 
-    python scripts/evaluer_arteres_veines.py --racine <dossier data de muflihsan/retina-av-dataset>
+Deux conditions de vaisseaux : ceux de l'expert (mesure la qualité du seul classement) et ceux du
+U-Net (chaîne complète de la démo). La référence (CRAE, CRVE, AVR) est calculée avec les vaisseaux
+et les étiquettes de l'expert. Les images sont réduites à 800 pixels au plus, comme dans la démo.
+
+    python scripts/evaluer_arteres_veines.py --racine <dossier data de muflihsan/retina-av-dataset> \
+        [--modele modeles/unet_av.onnx --parties test --sortie resultats/arteres_veines_unet_av.json]
 """
 
 from __future__ import annotations
@@ -30,11 +33,9 @@ sys.path.insert(0, str(RACINE / "src"))
 
 from vaisseaux.pretraitement import normaliser_pour_reseau  # noqa: E402
 from vaisseaux.zones import (  # noqa: E402
-    KNUDTSON_ARTERES,
-    KNUDTSON_VEINES,
+    calibres_av,
     caracteristiques,
     classer_arteres,
-    knudtson,
     papille,
     segments_zone,
 )
@@ -57,10 +58,23 @@ def champ(rgb: np.ndarray) -> np.ndarray:
     return ndi.binary_erosion(m, iterations=3)
 
 
+def segmenter(session, rgb: np.ndarray, masque: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
+    """Probabilité « vaisseau » et, si le modèle a cette sortie, probabilité « artère »."""
+    h, w = masque.shape
+    sorties = session.run(None, {"image": normaliser_pour_reseau(rgb, masque, 32)[None]})
+    proba = 1 / (1 + np.exp(-sorties[0][0][:h, :w]))
+    arteres = 1 / (1 + np.exp(-sorties[1][0][:h, :w])) if len(sorties) > 1 else None
+    return proba, arteres
+
+
 def unet(session, rgb: np.ndarray, masque: np.ndarray) -> np.ndarray:
-    x = normaliser_pour_reseau(rgb, masque)[None]
-    logits = session.run(None, {"image": x})[0][0][: masque.shape[0], : masque.shape[1]]
-    return (1 / (1 + np.exp(-logits)) >= SEUIL_UNET) & masque
+    return (segmenter(session, rgb, masque)[0] >= SEUIL_UNET) & masque
+
+
+def carte_expert(rouge: np.ndarray, bleu: np.ndarray) -> np.ndarray:
+    """1 artère, 0 veine, NaN ailleurs (à 2 pixels près des tracés de l'expert)."""
+    r, b = ndi.binary_dilation(rouge, iterations=2), ndi.binary_dilation(bleu, iterations=2)
+    return np.where(r & ~b, 1.0, np.where(b & ~r, 0.0, np.nan))
 
 
 def verite_segments(segs: list[dict], rouge: np.ndarray, bleu: np.ndarray) -> np.ndarray:
@@ -74,10 +88,15 @@ def verite_segments(segs: list[dict], rouge: np.ndarray, bleu: np.ndarray) -> np
     return sortie
 
 
-def avr(segs: list[dict], arteres: np.ndarray) -> float:
-    largeurs = np.array([s["largeur"] for s in segs])
-    crae, crve = knudtson(largeurs[arteres], KNUDTSON_ARTERES), knudtson(largeurs[~arteres], KNUDTSON_VEINES)
-    return crae / crve if np.isfinite(crae) and np.isfinite(crve) and crve > 0 else float("nan")
+def calibres_segments(segs: list[dict], arteres: np.ndarray, diametre: float) -> dict[str, float]:
+    """CRAE, CRVE, AVR quand chaque segment a déjà sa classe (True = artère)."""
+    carte = np.full((max(s["lignes"].max() for s in segs) + 1, max(s["colonnes"].max() for s in segs) + 1), np.nan)
+    for s, a in zip(segs, arteres, strict=True):
+        carte[s["lignes"], s["colonnes"]] = float(a)
+    return calibres_av(segs, carte, diametre)
+
+
+MESURES = ("crae_um", "crve_um", "avr")
 
 
 def main() -> int:
@@ -85,73 +104,95 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--racine", type=Path, required=True)
+    parser.add_argument("--modele", type=Path, default=RACINE / "modeles" / "unet_drive.onnx")
+    parser.add_argument("--parties", default="training,test")
     parser.add_argument("--sortie", type=Path, default=RACINE / "resultats" / "arteres_veines.json")
     args = parser.parse_args()
-    session = ort.InferenceSession(str(RACINE / "modeles" / "unet_drive.onnx"), providers=["CPUExecutionProvider"])
+    session = ort.InferenceSession(str(args.modele), providers=["CPUExecutionProvider"])
     resultats: dict = {}
     for base in ("DRIVE_AV", "HRF-AV", "LES-AV"):
-        for partie in ("training", "test"):
+        for partie in args.parties.split(","):
             images = sorted(glob.glob(str(args.racine / base / partie / "images" / "*")))
             etiquettes = sorted(glob.glob(str(args.racine / base / partie / "1st_manual" / "*")))
             lignes = []
             for image, etiquette in zip(images, etiquettes, strict=True):
                 rgb, rouge, bleu, vaisseaux_expert = charger(image, etiquette)
                 masque = champ(rgb)
-                vaisseaux_unet = unet(session, rgb, masque)
+                proba, p_arteres = segmenter(session, rgb, masque)
+                vaisseaux_unet = (proba >= SEUIL_UNET) & masque
                 disque = papille(rgb, masque, vaisseaux_unet)
+                dp = disque["diametre"]
                 # référence : vaisseaux et étiquettes de l'expert
                 segs_ref = segments_zone(vaisseaux_expert & masque, disque)
-                v_ref = verite_segments(segs_ref, rouge, bleu)
-                connus = v_ref >= 0
-                avr_ref = avr([s for s, c in zip(segs_ref, connus, strict=True) if c], v_ref[connus] == 1)
-                ligne = {"image": Path(image).name, "avr_reference": avr_ref}
+                reference = calibres_av(segs_ref, carte_expert(rouge, bleu), dp)
+                ligne = {"image": Path(image).name} | {f"reference_{k}": reference[k] for k in MESURES}
                 for nom, vaisseaux in (("expert", vaisseaux_expert & masque), ("unet", vaisseaux_unet)):
                     segs = segments_zone(vaisseaux, disque)
                     if len(segs) < 4:
                         continue
-                    carac = caracteristiques(rgb, vaisseaux, segs)
-                    angles = np.array([s["angle"] for s in segs])
                     verite = verite_segments(segs, rouge, bleu)
                     poids = np.array([s["longueur"] for s in segs])
-                    for variante, par_quadrant in (("quadrants", True), ("global", False)):
-                        arteres = classer_arteres(carac, angles, par_quadrant)
+                    angles = np.array([s["angle"] for s in segs])
+                    carac = caracteristiques(rgb, vaisseaux, segs)
+                    classements = {
+                        "quadrants": classer_arteres(carac, angles, True),
+                        "global": classer_arteres(carac, angles, False),
+                    }
+                    if p_arteres is not None:
+                        classements["modele"] = np.array(
+                            [np.mean(p_arteres[s["lignes"], s["colonnes"]]) >= 0.5 for s in segs]
+                        )
+                    for variante, arteres in classements.items():
                         ok = verite >= 0
                         ligne[f"{nom}_{variante}_exactitude"] = (
                             float(np.average((arteres[ok] == (verite[ok] == 1)), weights=poids[ok]))
                             if ok.any()
                             else float("nan")
                         )
-                        ligne[f"{nom}_{variante}_avr"] = avr(segs, arteres)
+                        for k, v in calibres_segments(segs, arteres, dp).items():
+                            ligne[f"{nom}_{variante}_{k}"] = v
                 lignes.append(ligne)
             resultats[f"{base}/{partie}"] = lignes
             print(f"{base:9s} {partie:8s} {len(lignes)} images", flush=True)
 
-    synthese = {}
-    for cle, lignes in resultats.items():
+    def synthese_de(lignes: list[dict]) -> dict:
         s = {}
+        variantes = sorted({k.split("_")[1] for li in lignes for k in li if k.endswith("_exactitude")})
         for nom in ("expert", "unet"):
-            for variante in ("quadrants", "global"):
-                ex = np.array([ligne.get(f"{nom}_{variante}_exactitude", np.nan) for ligne in lignes])
-                a = np.array([ligne.get(f"{nom}_{variante}_avr", np.nan) for ligne in lignes])
-                ref = np.array([ligne["avr_reference"] for ligne in lignes])
-                ok = np.isfinite(a) & np.isfinite(ref)
-                s[f"{nom}_{variante}"] = {
-                    "exactitude": float(np.nanmean(ex)),
-                    "avr_spearman": float(spearmanr(a[ok], ref[ok]).statistic) if ok.sum() > 3 else None,
-                    "avr_ecart_moyen": float(np.mean(np.abs(a[ok] - ref[ok]))) if ok.any() else None,
-                    "avr_reference_moyen": float(np.mean(ref[ok])) if ok.any() else None,
-                }
-        synthese[cle] = s
-    args.sortie.write_text(json.dumps({"synthese": synthese, "images": resultats}, indent=1, ensure_ascii=False))
+            for variante in variantes:
+                ex = np.array([li.get(f"{nom}_{variante}_exactitude", np.nan) for li in lignes])
+                d = {"exactitude": float(np.nanmean(ex))}
+                for k in MESURES:
+                    a = np.array([li.get(f"{nom}_{variante}_{k}", np.nan) for li in lignes])
+                    ref = np.array([li[f"reference_{k}"] for li in lignes])
+                    ok = np.isfinite(a) & np.isfinite(ref)
+                    d[f"{k}_spearman"] = float(spearmanr(a[ok], ref[ok]).statistic) if ok.sum() > 3 else None
+                    d[f"{k}_ecart_relatif_median"] = (
+                        float(np.median(np.abs(a[ok] - ref[ok]) / ref[ok])) if ok.any() else None
+                    )
+                    d[f"{k}_images"] = int(ok.sum())
+                s[f"{nom}_{variante}"] = d
+        return s
+
+    synthese = {cle: synthese_de(lignes) for cle, lignes in resultats.items()}
+    for partie in args.parties.split(","):
+        synthese[f"toutes/{partie}"] = synthese_de([li for c, v in resultats.items() if c.endswith(partie) for li in v])
+    args.sortie.write_text(
+        json.dumps(
+            {"modele": args.modele.name, "synthese": synthese, "images": resultats}, indent=1, ensure_ascii=False
+        )
+    )
     print(
-        f"\n{'base/partie':18s} {'vaisseaux':9s} {'variante':10s} {'exactitude':>10s} {'AVR ρ':>7s} {'écart AVR':>9s}"
+        f"\n{'base/partie':18s} {'vaisseaux':9s} {'variante':10s} {'exactitude':>10s} {'AVR ρ':>6s} {'CRAE ρ':>7s} {'CRVE ρ':>7s}"
     )
     for cle, s in synthese.items():
         for k, v in s.items():
             nom, variante = k.split("_")
-            rho = "—" if v["avr_spearman"] is None else f"{v['avr_spearman']:.2f}"
-            ecart = "—" if v["avr_ecart_moyen"] is None else f"{v['avr_ecart_moyen']:.3f}"
-            print(f"{cle:18s} {nom:9s} {variante:10s} {v['exactitude']:10.1%} {rho:>7s} {ecart:>9s}")
+            rho = [
+                "—" if v[f"{m}_spearman"] is None else f"{v[f'{m}_spearman']:.2f}"
+                for m in ("avr", "crae_um", "crve_um")
+            ]
+            print(f"{cle:18s} {nom:9s} {variante:10s} {v['exactitude']:10.1%} {rho[0]:>6s} {rho[1]:>7s} {rho[2]:>7s}")
     return 0
 
 
