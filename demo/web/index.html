@@ -441,9 +441,19 @@ function consigne(texte) {
   $("consigne").textContent = texte || "";
 }
 
+// une vue n'est proposée que si ce qu'elle montre existe pour l'image affichée
+const CONDITIONS_VUES = {
+  verite: [() => etat.verite, "Disponible sur les images d'exemple annotées"],
+  segmentation: [() => etat.segmentation, "Cliquez d'abord « Mesurer les vaisseaux »"],
+  arteres: [() => etat.arteres, "Cliquez d'abord « Mesurer les vaisseaux »"],
+  zones: [() => etat.segmentation, "Cliquez d'abord « Mesurer les vaisseaux »"],
+  chaleur: [() => etat.chaleur, "Cliquez « Voir les zones » sous un résultat de « Analyser l'image »"],
+};
+const vueDisponible = (cle) => !CONDITIONS_VUES[cle] || CONDITIONS_VUES[cle][0]();
+
 function reglagesActifs(actifs) {
   document.querySelectorAll("aside button, aside select, aside input, .outils button, #lancerGalerie, .galerie button, #mesurer, #analyser")
-    .forEach((el) => (el.disabled = !actifs || (el.id === "telecharger" && !etat.resultat) || (el.dataset.vue === "verite" && !etat.verite) || (el.dataset.vue === "segmentation" && !etat.segmentation)));
+    .forEach((el) => (el.disabled = !actifs || (el.id === "telecharger" && !etat.resultat) || (el.dataset.vue != null && !vueDisponible(el.dataset.vue))));
 }
 
 async function occuper(texte, travail) {
@@ -605,7 +615,7 @@ async function installer(infos, source) {
   for (const t of [toile, survol]) { t.width = infos.largeur; t.height = infos.hauteur; }
   Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false, arteres: false, etiquette: null,
     qualite: infos.qualite || null, chaleur: false, cartesTroubles: null });
-  if (["segmentation", "chaleur", "arteres", "zones"].includes(etat.vue)) etat.vue = "originale";
+  if (!vueDisponible(etat.vue)) etat.vue = "originale";
   $("resultatMesures").replaceChildren();
   $("resultatTroubles").replaceChildren();
   $("lectureTroubles").hidden = true;
@@ -630,7 +640,8 @@ async function installer(infos, source) {
 }
 
 async function afficherVue(vue) {
-  etat.vue = vue;
+  etat.vue = vueDisponible(vue) ? vue : "originale";
+  vue = etat.vue;
   majVues();
   const png = appeler("vue", vue, $("configA").value);
   etat.fond = await createImageBitmap(new Blob([png], { type: "image/png" }));
@@ -653,25 +664,10 @@ function majVues() {
     const actif = b.dataset.vue === etat.vue;
     b.classList.toggle("actif", actif);
     b.setAttribute("aria-pressed", actif);
-    if (b.dataset.vue === "verite") {
-      b.disabled = !etat.verite;
-      b.title = etat.verite ? "" : "Disponible sur les images d'exemple annotées";
-    }
-    if (b.dataset.vue === "zones") {
-      b.disabled = !etat.segmentation;
-      b.title = etat.segmentation ? "" : "Cliquez d'abord « Mesurer les vaisseaux »";
-    }
-    if (b.dataset.vue === "arteres") {
-      b.disabled = !etat.arteres;
-      b.title = etat.arteres ? "" : "Cliquez d'abord « Mesurer les vaisseaux »";
-    }
-    if (b.dataset.vue === "chaleur") {
-      b.disabled = !etat.chaleur;
-      b.title = etat.chaleur ? "" : "Cliquez « Voir les zones » sous un résultat de « Analyser l'image »";
-    }
-    if (b.dataset.vue === "segmentation") {
-      b.disabled = !etat.segmentation;
-      b.title = etat.segmentation ? "" : "Cliquez d'abord « Mesurer les vaisseaux »";
+    const condition = CONDITIONS_VUES[b.dataset.vue];
+    if (condition) {
+      b.disabled = !condition[0]();
+      b.title = b.disabled ? condition[1] : "";
     }
   }
 }

@@ -117,6 +117,15 @@ def vue(nom: str, config: str) -> bytes:
     """PNG de la vue demandée : originale, vert, rehaussee, vaisseaux ou verite."""
     if nom == "originale":
         return _png(_etat["rgb"])
+    besoins = {
+        "segmentation": "segmentation",
+        "verite": "verite",
+        "chaleur": "chaleur",
+        "zones": "disque",
+        "arteres": "arteres",
+    }
+    if nom in besoins and besoins[nom] not in _etat:
+        return _png(_etat["rgb"])  # vue pas encore disponible : jamais une autre vue à sa place
     if nom == "segmentation" and "segmentation" in _etat:
         return _png(_etat["segmentation"].astype(float))
     if nom == "verite" and "verite" in _etat:
