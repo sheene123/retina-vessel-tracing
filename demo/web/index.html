@@ -128,6 +128,8 @@
   @keyframes apparait { from { opacity: 0; transform: translateY(4px); } }
   .synthese p { margin: 4px 0; max-width: 72ch; }
   .synthese .ligne { display: flex; gap: 10px; align-items: baseline; }
+  .legende-vue { margin: 2px 0 0; }
+  .legende-vue .pastille { margin: 0 5px 0 2px; }
   .pastille { display: inline-block; flex: none; width: 18px; height: 5px; border-radius: 3px; transform: translateY(-3px); }
   .erreur { color: var(--alerte); }
   .tableau { overflow-x: auto; margin-top: 10px; }
@@ -212,6 +214,7 @@
       </div>
       <div class="outils">
         <div class="segments" id="vues" role="group" aria-label="Image affichée"></div>
+        <p class="aide legende-vue" id="legendeVue" hidden></p>
         <div class="rangee">
           <label class="case" style="margin:0 6px 0 0"><input type="checkbox" id="voirReference" checked> Chemin de l'expert</label>
           <button type="button" id="effacer" title="Raccourci : touche Échap">Effacer les points</button>
@@ -441,13 +444,11 @@ function consigne(texte) {
   $("consigne").textContent = texte || "";
 }
 
-// une vue n'est proposée que si ce qu'elle montre existe pour l'image affichée
+// les vues qui demandent un calcul (U-Net, analyse) le lancent au clic ; seule l'annotation de
+// l'expert peut manquer, et les artères/veines si le U-Net en service ne les distingue pas
 const CONDITIONS_VUES = {
   verite: [() => etat.verite, "Disponible sur les images d'exemple annotées"],
-  segmentation: [() => etat.segmentation, "Cliquez d'abord « Mesurer les vaisseaux »"],
-  arteres: [() => etat.arteres, "Cliquez d'abord « Mesurer les vaisseaux »"],
-  zones: [() => etat.segmentation, "Cliquez d'abord « Mesurer les vaisseaux »"],
-  chaleur: [() => etat.chaleur, "Cliquez « Voir les zones » sous un résultat de « Analyser l'image »"],
+  arteres: [() => !etat.segmentation || etat.arteres, "Ce modèle ne distingue pas artères et veines"],
 };
 const vueDisponible = (cle) => !CONDITIONS_VUES[cle] || CONDITIONS_VUES[cle][0]();
 
@@ -639,9 +640,32 @@ async function installer(infos, source) {
   $("telecharger").disabled = true;
 }
 
+// légende affichée sous les boutons pour les vues en couleurs
+const pastille = (couleur) => `<span class="pastille" style="background:${couleur}"></span>`;
+const LEGENDES_VUES = {
+  zones: () => `${pastille("#50dc50")}nerf optique · ${pastille("#f0dc3c")}zone B : largeur des vaisseaux${etat.arteres
+    ? ` (${pastille("#ff4646")}artères, ${pastille("#508cff")}veines)` : ""} · ${pastille("#50d2e6")}zone C : sinuosité, densité, longueur`,
+  arteres: () => `${pastille("#ff3c3c")}artères · ${pastille("#3c8cff")}veines · couleur pâle : le réseau hésite`,
+  chaleur: () => `${pastille("#ffb000")}en rouge et jaune : ce que le réseau a regardé pour la maladie choisie`,
+};
+
+// vue demandée par un bouton : lance d'abord ce qui manque
+async function ouvrirVue(cle) {
+  if (["segmentation", "arteres", "zones"].includes(cle) && !etat.segmentation) await mesurerVaisseaux();
+  if (cle === "chaleur" && !etat.chaleur) {
+    if (!etat.cartesTroubles) await analyserTroubles();
+    // sans carte choisie, on montre la maladie au score le plus haut ; « Voir les zones » en choisit une autre
+    if (etat.cartesTroubles) return voirZones(etat.troublePrincipal);
+  }
+  await occuper("Calcul de la vue", () => afficherVue(cle));
+}
+
 async function afficherVue(vue) {
   etat.vue = vueDisponible(vue) ? vue : "originale";
   vue = etat.vue;
+  const legende = LEGENDES_VUES[vue]?.();
+  $("legendeVue").hidden = !legende;
+  $("legendeVue").innerHTML = legende || "";
   majVues();
   const png = appeler("vue", vue, $("configA").value);
   etat.fond = await createImageBitmap(new Blob([png], { type: "image/png" }));
@@ -656,7 +680,7 @@ function majVues() {
       b.type = "button";
       b.dataset.vue = cle;
       b.textContent = nom;
-      b.addEventListener("click", () => occuper("Calcul de la vue", () => afficherVue(cle)));
+      b.addEventListener("click", () => ouvrirVue(cle));
       conteneur.append(b);
     }
   }
@@ -1111,6 +1135,7 @@ async function analyserTroubles() {
       const t = configTroubles.troubles[cle];
       return { cle, ...t, p: 1 / (1 + Math.exp(-(t.a * z[j] + t.b))) };
     });
+    etat.troublePrincipal = resultats.reduce((a, b) => (b.p > a.p ? b : a)).cle;
     afficherTroubles(resultats);
   });
 }

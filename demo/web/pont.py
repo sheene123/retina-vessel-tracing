@@ -368,37 +368,39 @@ def _mesures_zones() -> dict:
 
 
 def _vue_zones() -> np.ndarray:
-    """Papille (vert), zone B (jaune), limite de la zone C (cyan) et vaisseaux de la zone C colorés
-    selon leur calibre, du bleu (fins) au rouge (gros), sur l'image assombrie."""
-    from PIL import ImageDraw
+    """Où les mesures sont prises, dessiné seulement dans l'œil : papille (contour vert), zone B
+    (anneau jaune, largeur des artères et des veines), zone C (anneau bleu clair, sinuosité,
+    densité, longueur). Dans la zone B, vaisseaux en rouge (artères) et bleu (veines) si le U-Net
+    les distingue, sinon en jaune ; ailleurs dans la zone C, en blanc."""
     from skimage.morphology import skeletonize
 
-    rgb, disque, segmentation = _etat["rgb"], _etat["disque"], _etat["segmentation"]
-    fond = (rgb.astype(np.float32) * 0.45).astype(np.uint8)
-    zone_c = anneau(segmentation.shape, disque, ZONE_C)
-    squelette = skeletonize(segmentation & zone_c)
-    largeur = 2 * ndi.distance_transform_edt(segmentation)[squelette] - 1
-    t = np.clip(largeur / max(np.percentile(largeur, 95), 1.0), 0, 1) if largeur.size else largeur
-    couleurs = np.stack([255 * t, 80 + 60 * (1 - np.abs(2 * t - 1)), 255 * (1 - t)], axis=-1).astype(np.uint8)
-    epais = ndi.binary_dilation(squelette, iterations=1)
-    lignes, colonnes = np.nonzero(squelette)
-    image = fond.copy()
-    image[epais] = (200, 200, 200)
-    image[lignes, colonnes] = couleurs
-    dessin_image = Image.fromarray(image)
-    dessin = ImageDraw.Draw(dessin_image)
-    cx, cy, d = disque["colonne"], disque["ligne"], disque["diametre"]
-    epaisseur = max(2, round(min(rgb.shape[:2]) / 250))
-    for rayon, couleur in (
-        (0.5, (80, 220, 80)),
-        (ZONE_B[0], (240, 220, 60)),
-        (ZONE_B[1], (240, 220, 60)),
-        (ZONE_C[1], (80, 210, 230)),
+    rgb, disque, seg, oeil = _etat["rgb"], _etat["disque"], _etat["segmentation"], _etat["masque"]
+    forme = seg.shape
+    zone_b = anneau(forme, disque, ZONE_B) & oeil
+    zone_c = anneau(forme, disque, ZONE_C) & oeil
+    image = rgb.astype(np.float32) * 0.4
+    # anneaux teintés, pour voir les zones même sans vaisseau
+    image[zone_c & ~zone_b] = image[zone_c & ~zone_b] * 0.88 + np.array([80, 210, 230]) * 0.12
+    image[zone_b] = image[zone_b] * 0.82 + np.array([240, 220, 60]) * 0.18
+    epaisseur = max(1, round(min(forme) / 300))
+    for bord, couleur in (  # du plus grand au plus petit : chaque bord garde sa couleur
+        (anneau(forme, disque, (0.0, ZONE_C[1])), (80, 210, 230)),
+        (zone_b, (240, 220, 60)),
+        (anneau(forme, disque, (0.0, 0.5)), (80, 220, 80)),
     ):
-        dessin.ellipse(
-            [cx - rayon * d, cy - rayon * d, cx + rayon * d, cy + rayon * d], outline=couleur, width=epaisseur
-        )
-    return np.asarray(dessin_image)
+        contour = bord & ~ndi.binary_erosion(bord, iterations=epaisseur)
+        image[contour & oeil] = couleur
+    trait = ndi.binary_dilation(skeletonize(seg & zone_c), iterations=epaisseur - 1 if epaisseur > 1 else 0)
+    trait &= zone_c
+    image[trait & ~zone_b] = (235, 235, 235)
+    dans_b = trait & zone_b
+    if "arteres" in _etat:
+        artere = _etat["arteres"] >= 0.5
+        image[dans_b & artere] = (255, 70, 70)
+        image[dans_b & ~artere] = (80, 140, 255)
+    else:
+        image[dans_b] = (250, 230, 80)
+    return image.clip(0, 255).astype(np.uint8)
 
 
 def _vue_arteres() -> np.ndarray:
