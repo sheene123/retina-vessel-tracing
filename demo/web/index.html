@@ -48,6 +48,8 @@
   .panneau { grid-area: panneau; position: sticky; top: 16px; background: var(--surface); border: 1px solid var(--bord); border-radius: 14px; padding: 18px; }
   @media (max-width: 860px) { .panneau { position: static; } }
   .visuel { grid-area: visuel; display: grid; gap: 14px; min-width: 0; }
+  /* un tableau large défile dans son cadre au lieu d'élargir tout le panneau */
+  .visuel > *, details { min-width: 0; }
   .carte { background: var(--surface); border: 1px solid var(--bord); border-radius: 14px; padding: 18px; }
   button, select, .bouton {
     font: inherit; color: var(--texte); background: var(--surface-2); border: 1px solid var(--bord); border-radius: 9px; padding: 7px 12px; cursor: pointer;
@@ -132,7 +134,7 @@
   table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
   th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--bord); white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; }
-  th { color: var(--texte-2); font-weight: 500; }
+  th { color: var(--texte-2); font-weight: 500; white-space: normal; vertical-align: bottom; min-width: 7ch; }
   .bloc { margin-top: 20px; }
   .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
   .badge.fiable { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
@@ -1174,8 +1176,8 @@ function afficherTroubles(resultats) {
     des bases d'entraînement, « 70 % » correspond à environ 7 yeux atteints sur 10. Au-dessus de 50 % : probable. Le seuil
     « possible » dépend de la maladie : il est placé pour signaler environ 8 yeux atteints sur 10, donc plus bas pour les
     maladies rares (quelques pourcents pour la rétinopathie hypertensive), qui atteignent rarement des pourcentages élevés.</p>
-    <div class="tableau"><table><thead><tr><th>Maladie</th><th>« Possible » dès</th>
-    <th>Qualité de détection (AUROC, validation croisée)</th><th>Atteints repérés dès « possible »</th>
+    <div class="tableau"><table><thead><tr><th>Maladie</th><th>«&nbsp;Possible&nbsp;» dès</th>
+    <th>Qualité de détection (AUROC, validation croisée)</th><th>Atteints repérés dès «&nbsp;possible&nbsp;»</th>
     <th>Fausses alertes (yeux sans la maladie signalés)</th>${externe ? "<th>Hôpital jamais vu (AUROC, nombre de cas)</th>" : ""}</tr></thead><tbody>`;
   const pct = (v) => (v == null ? "n/d" : `${Math.round(100 * v)} %`);
   for (const cle of configTroubles.ordre) {
