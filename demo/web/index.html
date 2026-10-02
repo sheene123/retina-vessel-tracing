@@ -644,7 +644,8 @@ async function installer(infos, source) {
 const pastille = (couleur) => `<span class="pastille" style="background:${couleur}"></span>`;
 const LEGENDES_VUES = {
   zones: () => `${pastille("#50dc50")}nerf optique · ${pastille("#f0dc3c")}zone B : largeur des vaisseaux${etat.arteres
-    ? ` (${pastille("#ff4646")}artères, ${pastille("#508cff")}veines)` : ""} · ${pastille("#50d2e6")}zone C : sinuosité, densité, longueur`,
+    ? ` (${pastille("#ff4646")}artères, ${pastille("#508cff")}veines)` : ""} · ${pastille("#50d2e6")}zone C : sinuosité, densité, longueur${
+    etat.mesures?.papille?.estime ? "<br>Taille du nerf optique non mesurable sur cette photo : zones tracées avec une taille type." : ""}`,
   arteres: () => `${pastille("#ff3c3c")}artères · ${pastille("#3c8cff")}veines · couleur pâle : le réseau hésite`,
   chaleur: () => `${pastille("#ffb000")}en rouge et jaune : ce que le réseau a regardé pour la maladie choisie`,
 };

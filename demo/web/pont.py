@@ -19,7 +19,7 @@ from vaisseaux.evaluation import auc_roc, evaluer_trace, metriques_binaires, ref
 from vaisseaux.graphe import carte_de_cout, plus_court_chemin
 from vaisseaux.pretraitement import normaliser_pour_reseau, pretraiter
 from vaisseaux.qualite import evaluer as evaluer_qualite
-from vaisseaux.zones import MESURES_ZONES, ZONE_B, ZONE_C, anneau, mesurer_zones, papille
+from vaisseaux.zones import MESURES_ZONES, ZONE_B, ZONE_C, anneau, mesurer_zones, papille, segments_zone
 
 MESURES_AV_AFFICHEES = ("crae_um", "crve_um")  # l'AVR n'est pas assez fiable (docs/mesures_zones.md)
 
@@ -390,16 +390,23 @@ def _vue_zones() -> np.ndarray:
     ):
         contour = bord & ~ndi.binary_erosion(bord, iterations=epaisseur)
         image[contour & oeil] = couleur
-    trait = ndi.binary_dilation(skeletonize(seg & zone_c), iterations=epaisseur - 1 if epaisseur > 1 else 0)
-    trait &= zone_c
-    image[trait & ~zone_b] = (235, 235, 235)
-    dans_b = trait & zone_b
-    if "arteres" in _etat:
-        artere = _etat["arteres"] >= 0.5
-        image[dans_b & artere] = (255, 70, 70)
-        image[dans_b & ~artere] = (80, 140, 255)
-    else:
-        image[dans_b] = (250, 230, 80)
+
+    def epaissir(masque: np.ndarray) -> np.ndarray:
+        # attention : iterations=0 ferait grossir le trait jusqu'à remplir toute l'image
+        return ndi.binary_dilation(masque, iterations=epaisseur - 1) if epaisseur > 1 else masque
+
+    image[epaissir(skeletonize(seg & zone_c)) & zone_c] = (235, 235, 235)
+    # zone B : les segments qui servent au CRAE et au CRVE, chacun d'une seule couleur, celle que
+    # lui donne le calcul (moyenne de la probabilité « artère » sur le segment)
+    for s in segments_zone(seg, disque, ZONE_B):
+        trait = np.zeros(forme, bool)
+        trait[s["lignes"], s["colonnes"]] = True
+        trait = epaissir(trait) & zone_b
+        if "arteres" in _etat:
+            artere = _etat["arteres"][s["lignes"], s["colonnes"]].mean() >= 0.5
+            image[trait] = (255, 70, 70) if artere else (80, 140, 255)
+        else:
+            image[trait] = (250, 230, 80)
     return image.clip(0, 255).astype(np.uint8)
 
 
