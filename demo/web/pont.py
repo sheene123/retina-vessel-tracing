@@ -148,12 +148,11 @@ def vue(nom: str, config: str) -> bytes:
         return _png(_vue_zones())
     if nom == "arteres" and "arteres" in _etat:
         return _png(_vue_arteres())
-    cartes = _cartes(config)
-    if nom == "vert":
-        return _png(cartes.vert)
-    if nom == "rehaussee":
-        return _png(cartes.rehaussee)
-    return _png(np.sqrt(cartes.vaisseaux))  # racine : rend visibles les capillaires
+    if nom in ("vert", "rehaussee"):
+        # le U-Net n'a ni canal vert ni image rehaussée : on montre ceux du prétraitement recommandé
+        cartes = _cartes("clahe_nl_means" if config == "unet" else config)
+        return _png(cartes.vert if nom == "vert" else cartes.rehaussee)
+    return _png(np.sqrt(_cartes(config).vaisseaux))  # racine : rend visibles les capillaires
 
 
 def _metriques_pixels(config: str) -> dict:
