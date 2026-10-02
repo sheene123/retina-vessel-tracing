@@ -1,0 +1,144 @@
+{
+ "source": "yeux sains de RFMiD (3 appareils) et de JSIEC, même chaîne que la démo",
+ "modele": "unet_drive.onnx",
+ "yeux": 706,
+ "papille_mesuree": 667,
+ "mesures": {
+  "calibre_zone_b": {
+   "percentiles": {
+    "5": 0.0437531810436051,
+    "25": 0.053676299718551305,
+    "50": 0.06163178167432687,
+    "75": 0.07321635206270109,
+    "95": 0.09321847761029284
+   },
+   "yeux": 666
+  },
+  "calibre_zone_b_um": {
+   "percentiles": {
+    "5": 78.75572587848919,
+    "25": 96.61733949339235,
+    "50": 110.93720701378837,
+    "75": 131.78943371286198,
+    "95": 167.7932596985271
+   },
+   "yeux": 666
+  },
+  "tortuosite_zone_c": {
+   "percentiles": {
+    "5": 1.0778122249415871,
+    "25": 1.0892492990445732,
+    "50": 1.09799938742711,
+    "75": 1.1115734379552404,
+    "95": 1.1503470976246748
+   },
+   "yeux": 667
+  },
+  "densite_zone_c": {
+   "percentiles": {
+    "5": 0.06051139168912333,
+    "25": 0.09017616001850542,
+    "50": 0.10412309530923215,
+    "75": 0.11964276952912671,
+    "95": 0.14529217793635738
+   },
+   "yeux": 667
+  },
+  "longueur_zone_c": {
+   "percentiles": {
+    "5": 1.3599848508090604,
+    "25": 2.0929220957225225,
+    "50": 2.4406983206321424,
+    "75": 2.8747661915895684,
+    "95": 3.800676694217644
+   },
+   "yeux": 667
+  }
+ },
+ "autres_appareils": {
+  "DRIVE_AV": {
+   "yeux": 20,
+   "calibre_zone_b": {
+    "rang_centile_median": 94.59459459459458,
+    "sous_p5": 0.0,
+    "au_dessus_p95": 0.5
+   },
+   "calibre_zone_b_um": {
+    "rang_centile_median": 94.59459459459458,
+    "sous_p5": 0.0,
+    "au_dessus_p95": 0.5
+   },
+   "tortuosite_zone_c": {
+    "rang_centile_median": 86.65667166416792,
+    "sous_p5": 0.1,
+    "au_dessus_p95": 0.15
+   },
+   "densite_zone_c": {
+    "rang_centile_median": 94.4527736131934,
+    "sous_p5": 0.0,
+    "au_dessus_p95": 0.45
+   },
+   "longueur_zone_c": {
+    "rang_centile_median": 31.484257871064468,
+    "sous_p5": 0.0,
+    "au_dessus_p95": 0.0
+   }
+  },
+  "HRF-AV": {
+   "yeux": 20,
+   "calibre_zone_b": {
+    "rang_centile_median": 83.93393393393393,
+    "sous_p5": 0.0,
+    "au_dessus_p95": 0.25
+   },
+   "calibre_zone_b_um": {
+    "rang_centile_median": 83.93393393393393,
+    "sous_p5": 0.0,
+    "au_dessus_p95": 0.25
+   },
+   "tortuosite_zone_c": {
+    "rang_centile_median": 65.89205397301349,
+    "sous_p5": 0.0,
+    "au_dessus_p95": 0.0
+   },
+   "densite_zone_c": {
+    "rang_centile_median": 95.42728635682158,
+    "sous_p5": 0.0,
+    "au_dessus_p95": 0.55
+   },
+   "longueur_zone_c": {
+    "rang_centile_median": 69.56521739130434,
+    "sous_p5": 0.0,
+    "au_dessus_p95": 0.05
+   }
+  },
+  "LES-AV": {
+   "yeux": 9,
+   "calibre_zone_b": {
+    "rang_centile_median": 11.861861861861863,
+    "sous_p5": 0.4444444444444444,
+    "au_dessus_p95": 0.0
+   },
+   "calibre_zone_b_um": {
+    "rang_centile_median": 11.861861861861863,
+    "sous_p5": 0.4444444444444444,
+    "au_dessus_p95": 0.0
+   },
+   "tortuosite_zone_c": {
+    "rang_centile_median": 21.43928035982009,
+    "sous_p5": 0.0,
+    "au_dessus_p95": 0.0
+   },
+   "densite_zone_c": {
+    "rang_centile_median": 6.146926536731634,
+    "sous_p5": 0.3333333333333333,
+    "au_dessus_p95": 0.0
+   },
+   "longueur_zone_c": {
+    "rang_centile_median": 12.743628185907047,
+    "sous_p5": 0.1111111111111111,
+    "au_dessus_p95": 0.0
+   }
+  }
+ }
+}

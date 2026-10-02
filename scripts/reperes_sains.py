@@ -38,7 +38,7 @@ RFMID = KAGGLE / "andrewmvd/retinal-disease-classification/versions/1"
 JSIEC = KAGGLE / "linchundan/fundusimage1000/versions/4/1000images/0.0.Normal"
 COTE_MAX, SEUIL_UNET = 800, 0.5
 _SESSION = None
-_MODELE = RACINE / "modeles" / "unet_drive.onnx"
+_MODELE = RACINE / "modeles" / "unet_av.onnx"
 
 
 def _initialiser(modele: str) -> None:
@@ -148,6 +148,8 @@ def main() -> int:
         "yeux": int(len(table)),
         "papille_mesuree": int(len(fiables)),
         "mesures": reperes,
+        # valeurs triées (papille mesurée) : la démo en tire le rang d'une photo parmi les yeux sains
+        "valeurs": {k: [round(float(v), 5) for v in np.sort(fiables[k].dropna().to_numpy())] for k in mesures},
     }
     if autres:
         autres_table = pd.DataFrame(

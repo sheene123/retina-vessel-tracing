@@ -35,8 +35,11 @@ def valider_unet(chemin: Path, drive: Path) -> dict:
     dices, aucs = [], []
     for ident in lister(drive, "test"):
         im = charger(drive, "test", ident)
-        x = normaliser_pour_reseau(im.rgb, im.masque)[None]
-        logits = session.run(None, {"image": x})[0][0][: im.masque.shape[0], : im.masque.shape[1]]
+        x = normaliser_pour_reseau(im.rgb, im.masque, 32)[None]
+        sorties = session.run(None, {"image": x})
+        if len(sorties) > 1 and (sorties[1].shape != sorties[0].shape or not np.isfinite(sorties[1]).all()):
+            raise ValueError(f"sortie « arteres » invalide : {sorties[1].shape}")
+        logits = sorties[0][0][: im.masque.shape[0], : im.masque.shape[1]]
         proba = 1 / (1 + np.exp(-logits)) * im.masque
         dices.append(metriques_binaires(proba >= 0.5, im.verite, im.masque)["dice"])
         aucs.append(auc_roc(proba, im.verite, im.masque))
@@ -80,7 +83,10 @@ def main() -> int:
         dossier = Path(snapshot_download(args.repo, repo_type="model", revision=args.version))
     else:
         dossier = args.dossier or RACINE / "modeles"
-    unet = valider_unet(dossier / "unet_drive.onnx", args.drive)
+    # U-Net multi-appareils (depuis v0.4.0), sinon premier U-Net
+    unet = valider_unet(
+        next(c for c in (dossier / "unet_av.onnx", dossier / "unet_drive.onnx") if c.exists()), args.drive
+    )
     resultat = {"unet": unet}
     if (dossier / "troubles.onnx").exists():
         chemin_configuration = dossier / "troubles.json"

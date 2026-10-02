@@ -104,7 +104,7 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--racine", type=Path, required=True)
-    parser.add_argument("--modele", type=Path, default=RACINE / "modeles" / "unet_drive.onnx")
+    parser.add_argument("--modele", type=Path, default=RACINE / "modeles" / "unet_av.onnx")
     parser.add_argument("--parties", default="training,test")
     parser.add_argument("--sortie", type=Path, default=RACINE / "resultats" / "arteres_veines.json")
     args = parser.parse_args()

@@ -1,0 +1,33 @@
+{
+ "modele": "unet_drive.onnx",
+ "parties": "test",
+ "mesures": {
+  "calibre_zone_b": {
+   "correlation_patients": 0.7961990950226244,
+   "ecart_relatif_median": 0.19522456720354128,
+   "images": 51
+  },
+  "calibre_zone_b_um": {
+   "correlation_patients": 0.7961990950226244,
+   "ecart_relatif_median": 0.19522456720354114,
+   "images": 51
+  },
+  "tortuosite_zone_c": {
+   "correlation_patients": 0.7209954751131221,
+   "ecart_relatif_median": 0.01028256616049241,
+   "images": 51
+  },
+  "densite_zone_c": {
+   "correlation_patients": 0.760266370699223,
+   "ecart_relatif_median": 0.18706055868649102,
+   "images": 52
+  },
+  "longueur_zone_c": {
+   "correlation_patients": 0.8432510885341074,
+   "ecart_relatif_median": 0.13534859844518038,
+   "images": 52
+  }
+ },
+ "diametre_papille_par_defaut": 1,
+ "images": 52
+}

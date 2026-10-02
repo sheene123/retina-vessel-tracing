@@ -21,6 +21,8 @@ from vaisseaux.pretraitement import normaliser_pour_reseau, pretraiter
 from vaisseaux.qualite import evaluer as evaluer_qualite
 from vaisseaux.zones import MESURES_ZONES, ZONE_B, ZONE_C, anneau, mesurer_zones, papille
 
+MESURES_AV_AFFICHEES = ("crae_um", "crve_um")  # l'AVR n'est pas assez fiable (docs/mesures_zones.md)
+
 COTE_MAX = 800  # le calcul dans le navigateur est plus lent : on réduit les grandes images
 NOMS = {
     "vert_brut": "Canal vert brut",
@@ -123,6 +125,8 @@ def vue(nom: str, config: str) -> bytes:
         return _png(_etat["chaleur"])
     if nom == "zones" and "disque" in _etat:
         return _png(_vue_zones())
+    if nom == "arteres" and "arteres" in _etat:
+        return _png(_vue_arteres())
     cartes = _cartes(config)
     if nom == "vert":
         return _png(cartes.vert)
@@ -246,14 +250,30 @@ def definir_fiabilite_zones(texte_json: str) -> None:
     FIABILITE_ZONES.update(json.loads(texte_json).get("mesures", {}))
 
 
+REPERES: dict = {}  # repères yeux sains des mesures qui passent le contrôle du biais d'appareil
+
+
+def definir_reperes(texte_json: str) -> None:
+    """Repères « yeux sains » (resultats/reperes_zones.json). Une mesure n'est gardée que si les
+    yeux des autres appareils (parties test de DRIVE_AV, HRF-AV, LES-AV) tombent, en médiane,
+    entre les 25e et 75e percentiles des yeux sains : sinon le repère mesurerait l'appareil."""
+    donnees = json.loads(texte_json)
+    REPERES.clear()
+    autres = donnees.get("autres_appareils", {})
+    for k, valeurs in donnees.get("valeurs", {}).items():
+        rangs = [b[k]["rang_centile_median"] for b in autres.values() if k in b]
+        if len(rangs) == 3 and all(25 <= r <= 75 for r in rangs):
+            REPERES[k] = np.sort(np.asarray(valeurs, dtype=float))
+
+
 def definir_fiabilite(texte_json: str) -> None:
     FIABILITE.clear()
     FIABILITE.update(json.loads(texte_json))
 
 
 def entree_unet() -> bytes:
-    """Image normalisée et complétée à un multiple de 16, en float32 (3, H, W)."""
-    x = normaliser_pour_reseau(_etat["rgb"], _etat["masque"])
+    """Image normalisée et complétée à un multiple de 32, en float32 (3, H, W)."""
+    x = normaliser_pour_reseau(_etat["rgb"], _etat["masque"], 32)
     _etat["forme_unet"] = x.shape[1:]
     return x.tobytes()
 
@@ -262,12 +282,20 @@ def forme_unet() -> str:
     return json.dumps(list(_etat["forme_unet"]))
 
 
-def recevoir_unet(octets) -> None:
-    """Logits du U-Net (H, W complétés) -> probabilité, puis segmentation dans le champ de vue."""
+def recevoir_unet(octets, octets_arteres=None) -> None:
+    """Logits du U-Net (H, W complétés) -> probabilité, puis segmentation dans le champ de vue.
+    `octets_arteres` : deuxième sortie du U-Net multi-appareils (artère plutôt que veine)."""
     hauteur, largeur = _etat["masque"].shape
-    logits = np.frombuffer(bytes(octets), dtype=np.float32).reshape(_etat["forme_unet"])[:hauteur, :largeur]
-    proba = 1.0 / (1.0 + np.exp(-logits))
+
+    def proba_de(o):
+        logits = np.frombuffer(bytes(o), dtype=np.float32).reshape(_etat["forme_unet"])[:hauteur, :largeur]
+        return 1.0 / (1.0 + np.exp(-logits))
+
+    proba = proba_de(octets)
     _etat["proba"] = proba
+    _etat.pop("arteres", None)
+    if octets_arteres is not None:
+        _etat["arteres"] = proba_de(octets_arteres)
     _etat["segmentation"] = (proba >= SEUIL_UNET) & _etat["masque"]
 
 
@@ -302,20 +330,24 @@ def _mesures_zones() -> dict:
     masque, segmentation = _etat["masque"], _etat["segmentation"]
     disque = papille(_etat["rgb"], masque, segmentation)
     _etat["disque"] = disque
-    valeur = mesurer_zones(segmentation, disque)
-    variantes = [mesurer_zones((_etat["proba"] >= s) & masque, disque) for s in (0.4, 0.6)]
+    arteres = _etat.get("arteres")
+    valeur = mesurer_zones(segmentation, disque, arteres)
+    variantes = [mesurer_zones((_etat["proba"] >= s) & masque, disque, arteres) for s in (0.4, 0.6)]
     expert = mesurer_zones(_etat["verite"] & masque, disque) if "verite" in _etat else None
     zones = {}
-    for k in MESURES_ZONES:
+    for k in MESURES_ZONES + (MESURES_AV_AFFICHEES if arteres is not None else ()):
         # la marge englobe la valeur elle-même et les deux variantes de seuil
         bornes = [v[k] for v in [*variantes, valeur] if np.isfinite(v[k])]
         zones[k] = {
             "valeur": _nombre(valeur[k]),
             "bas": _nombre(min(bornes)) if bornes else None,
             "haut": _nombre(max(bornes)) if bornes else None,
-            "expert": _nombre(expert[k]) if expert is not None else None,
+            "expert": _nombre(expert[k]) if expert is not None and k in expert else None,
             "fiabilite": FIABILITE_ZONES.get(k),
         }
+        if k in REPERES and np.isfinite(valeur[k]):
+            # rang parmi les yeux sains de référence (0 à 100)
+            zones[k]["centile_sains"] = round(100 * np.searchsorted(REPERES[k], valeur[k]) / len(REPERES[k]))
     return {
         "zones": zones,
         "papille": {
@@ -358,6 +390,19 @@ def _vue_zones() -> np.ndarray:
             [cx - rayon * d, cy - rayon * d, cx + rayon * d, cy + rayon * d], outline=couleur, width=epaisseur
         )
     return np.asarray(dessin_image)
+
+
+def _vue_arteres() -> np.ndarray:
+    """Vaisseaux du U-Net colorés : artères en rouge, veines en bleu (plus pâle si le réseau hésite),
+    sur l'image assombrie."""
+    seg, p = _etat["segmentation"], _etat["arteres"]
+    image = (_etat["rgb"].astype(np.float32) * 0.35).astype(np.uint8)
+    certitude = np.abs(2 * p - 1)  # 0 : hésite, 1 : sûr
+    rouge = np.stack([np.full_like(p, 255), 60 * (1 - certitude), 60 * (1 - certitude)], axis=-1)
+    bleu = np.stack([60 * (1 - certitude), 110 + 30 * (1 - certitude), np.full_like(p, 255)], axis=-1)
+    couleur = np.where((p >= 0.5)[..., None], rouge, bleu).astype(np.uint8)
+    image[seg] = couleur[seg]
+    return image
 
 
 # ---------------------------------------------------------------- troubles de l'œil

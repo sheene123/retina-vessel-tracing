@@ -1,31 +1,48 @@
 {
+ "modele": "unet_av.onnx",
+ "parties": "test",
  "mesures": {
   "calibre_zone_b": {
-   "correlation_patients": 0.792867956946257,
-   "ecart_relatif_median": 0.18886091442110536,
-   "images": 106
+   "correlation_patients": 0.8474344745154955,
+   "ecart_relatif_median": 0.12106830396139462,
+   "images": 52
   },
   "calibre_zone_b_um": {
-   "correlation_patients": 0.792867956946257,
-   "ecart_relatif_median": 0.18886091442110536,
-   "images": 106
+   "correlation_patients": 0.8474344745154955,
+   "ecart_relatif_median": 0.12106830396139456,
+   "images": 52
   },
   "tortuosite_zone_c": {
-   "correlation_patients": 0.6316396705040683,
-   "ecart_relatif_median": 0.008998922339202707,
-   "images": 106
+   "correlation_patients": 0.6742081447963801,
+   "ecart_relatif_median": 0.009832816404937276,
+   "images": 52
   },
   "densite_zone_c": {
-   "correlation_patients": 0.6328591861125805,
-   "ecart_relatif_median": 0.1859998616587121,
-   "images": 107
+   "correlation_patients": 0.9163322803722359,
+   "ecart_relatif_median": 0.10972755614650564,
+   "images": 52
   },
   "longueur_zone_c": {
-   "correlation_patients": 0.8287584004388799,
-   "ecart_relatif_median": 0.13488861603227495,
-   "images": 107
+   "correlation_patients": 0.8779134295227524,
+   "ecart_relatif_median": 0.09409148384013194,
+   "images": 52
+  },
+  "crae_um": {
+   "correlation_patients": 0.725262528814138,
+   "ecart_relatif_median": 0.15727013693881492,
+   "images": 52
+  },
+  "crve_um": {
+   "correlation_patients": 0.8537522410996328,
+   "ecart_relatif_median": 0.12277047132751268,
+   "images": 52
+  },
+  "avr": {
+   "correlation_patients": 0.1629813028259199,
+   "ecart_relatif_median": 0.13669347757340006,
+   "images": 52
   }
  },
- "diametre_papille_par_defaut": 5,
- "images": 107
+ "diametre_papille_par_defaut": 0,
+ "images": 52
 }

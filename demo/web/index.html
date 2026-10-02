@@ -355,7 +355,7 @@ const CONFIGS = {
   clahe_median: ["CLAHE + filtre médian", "Retire les points isolés en conservant les bords."],
   clahe_bilateral: ["CLAHE + filtre bilatéral", "Lisse en préservant les contours, mais crée parfois des raccourcis entre vaisseaux voisins."],
 };
-const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Contraste amélioré", vaisseaux: "Ce que voit le programme", segmentation: "Segmentation U-Net", verite: "Annotation de l'expert", chaleur: "Zones regardées par le réseau", zones: "Zones de mesure" };
+const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Contraste amélioré", vaisseaux: "Ce que voit le programme", segmentation: "Segmentation U-Net", arteres: "Artères et veines", verite: "Annotation de l'expert", chaleur: "Zones regardées par le réseau", zones: "Zones de mesure" };
 // mesures dans les zones autour de la papille (vaisseaux.zones) : comparables d'une photo à l'autre
 // tuiles : nom et explication en langage courant (mêmes clés que MESURES_ZONES)
 const TUILES = {
@@ -363,12 +363,16 @@ const TUILES = {
   tortuosite_zone_c: ["Sinuosité", "1 = vaisseaux parfaitement droits ; plus la valeur monte, plus ils ondulent"],
   densite_zone_c: ["Densité des vaisseaux", "part de la rétine couverte par les vaisseaux autour du nerf optique"],
   longueur_zone_c: ["Longueur du réseau", "longueur des vaisseaux par surface : plus c'est haut, plus le réseau est fourni"],
+  crae_um: ["Largeur des artères", "calibre équivalent des artérioles près du nerf optique (CRAE), en micromètres estimés"],
+  crve_um: ["Largeur des veines", "calibre équivalent des veinules près du nerf optique (CRVE), en micromètres estimés"],
 };
 const MESURES_ZONES = [
   ["calibre_zone_b_um", "Calibre des gros vaisseaux (zone B)", "largeur moyenne des 6 plus gros vaisseaux près de la papille, en µm estimés (1 diamètre de papille ≈ 1 800 µm)", (v) => `${fr(v, 0)} µm`],
   ["tortuosite_zone_c", "Tortuosité (zone C)", "longs segments, pondérés par leur longueur (1 = droit)", (v) => fr(v, 3)],
   ["densite_zone_c", "Densité vasculaire (zone C)", "part de l'anneau couverte par les vaisseaux", (v) => `${fr(100 * v, 1)} %`],
   ["longueur_zone_c", "Densité de longueur (zone C)", "longueur des vaisseaux par surface, par diamètre de papille", (v) => fr(v, 2)],
+  ["crae_um", "Calibre des artérioles, CRAE (zone B)", "les 6 plus grosses artères combinées par la formule de Knudtson, en µm estimés", (v) => `${fr(v, 0)} µm`],
+  ["crve_um", "Calibre des veinules, CRVE (zone B)", "les 6 plus grosses veines combinées par la formule de Knudtson, en µm estimés", (v) => `${fr(v, 0)} µm`],
 ];
 const MARQUEURS = [
   ["densite", "Densité vasculaire", "part de la rétine couverte par les vaisseaux", (v) => `${fr(100 * v, 1)} %`],
@@ -387,7 +391,7 @@ const CONSIGNES = ["", "Cliquez le point de départ sur un vaisseau", "Cliquez l
 
 const $ = (id) => document.getElementById(id);
 const toile = $("toile"), ctx = toile.getContext("2d"), survol = $("survol"), sctx = survol.getContext("2d");
-const etat = { qualite: null, chaleur: false, cartesTroubles: null, etiquette: null, fichierEnAttente: null, pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
+const etat = { arteres: false, qualite: null, chaleur: false, cartesTroubles: null, etiquette: null, fichierEnAttente: null, pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
 let sessionUnet = null, sessionTroubles = null, configTroubles = null;
 const DESCRIPTIONS_TROUBLES = {
   diabete: "atteinte des petits vaisseaux due au diabète : petites hémorragies, dépôts jaunâtres",
@@ -478,6 +482,10 @@ async function demarrer() {
       const reponse = await fetch("fiabilite_zones.json");
       if (reponse.ok) appeler("definir_fiabilite_zones", await reponse.text());
     } catch { /* sans fichier de fiabilité des zones, la colonne reste vide */ }
+    try {
+      const reponse = await fetch("reperes_zones.json");
+      if (reponse.ok) appeler("definir_reperes", await reponse.text());
+    } catch { /* sans repères, pas de comparaison aux yeux sains */ }
     voile("Chargement d'une image d'exemple", "Image DRIVE et annotation de l'expert", 3);
     etat.pret = true;
     // une image choisie pendant le chargement passe avant l'exemple
@@ -593,9 +601,9 @@ async function voirZones(cle) {
 
 async function installer(infos, source) {
   for (const t of [toile, survol]) { t.width = infos.largeur; t.height = infos.hauteur; }
-  Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false, etiquette: null,
+  Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false, arteres: false, etiquette: null,
     qualite: infos.qualite || null, chaleur: false, cartesTroubles: null });
-  if (etat.vue === "segmentation" || etat.vue === "chaleur") etat.vue = "originale";
+  if (["segmentation", "chaleur", "arteres", "zones"].includes(etat.vue)) etat.vue = "originale";
   $("resultatMesures").replaceChildren();
   $("resultatTroubles").replaceChildren();
   $("lectureTroubles").hidden = true;
@@ -650,6 +658,10 @@ function majVues() {
     if (b.dataset.vue === "zones") {
       b.disabled = !etat.segmentation;
       b.title = etat.segmentation ? "" : "Cliquez d'abord « Mesurer les vaisseaux »";
+    }
+    if (b.dataset.vue === "arteres") {
+      b.disabled = !etat.arteres;
+      b.title = etat.arteres ? "" : "Cliquez d'abord « Mesurer les vaisseaux »";
     }
     if (b.dataset.vue === "chaleur") {
       b.disabled = !etat.chaleur;
@@ -889,16 +901,19 @@ async function mesurerVaisseaux() {
   await occuper("Segmentation par le U-Net et mesure des vaisseaux", async () => {
     if (!sessionUnet) {
       preparerOrt();
-      sessionUnet = await ort.InferenceSession.create("unet_drive.onnx");
+      sessionUnet = await ort.InferenceSession.create("unet.onnx");
     }
     const octets = appeler("entree_unet");
     const [h, w] = JSON.parse(appeler("forme_unet"));
     const entree = new Float32Array(octets.slice().buffer);
     const sortie = await sessionUnet.run({ image: new ort.Tensor("float32", entree, [1, 3, h, w]) });
-    const logits = sortie.logits.data;
-    appeler("recevoir_unet", new Uint8Array(logits.buffer, logits.byteOffset, logits.byteLength));
+    const octets_ = (t) => new Uint8Array(t.data.buffer, t.data.byteOffset, t.data.byteLength);
+    // U-Net multi-appareils : deuxième sortie « arteres » (artère plutôt que veine)
+    if (sortie.arteres) appeler("recevoir_unet", octets_(sortie.logits), octets_(sortie.arteres));
+    else appeler("recevoir_unet", octets_(sortie.logits));
     const r = JSON.parse(appeler("mesures"));
     etat.segmentation = true;
+    etat.arteres = Boolean(sortie.arteres);
     afficherMesures(r);
     await afficherVue("segmentation");
   });
@@ -933,14 +948,16 @@ function tuiles(r) {
   let html = '<div class="tuiles">';
   for (const [cle, , , format] of MESURES_ZONES) {
     const m = r.zones[cle];
+    if (!m) continue;
     const [nom, desc] = TUILES[cle];
     const f = m.fiabilite?.correlation_patients;
     const fiabilite = f == null ? "" : f >= 0.75 ? "mesure fiable" : f >= 0.5 ? "mesure approximative" : "mesure peu fiable";
     const expert = m.expert == null ? "" : ` · expert : ${format(m.expert)}`;
+    const sains = m.centile_sains == null ? "" : ` · plus haut que ${m.centile_sains} % des yeux sains de référence`;
     html += `<div class="tuile"><span class="tuile-nom">${echapper(nom)}</span>
       <strong class="tuile-valeur">${m.valeur == null ? "n/d" : format(m.valeur)}</strong>
       <span class="tuile-desc">${echapper(desc)}</span>
-      <span class="tuile-pied">${fiabilite}${expert}</span></div>`;
+      <span class="tuile-pied">${fiabilite}${expert}${sains}</span></div>`;
   }
   html += "</div>";
   if (r.papille?.estime) {
@@ -970,14 +987,17 @@ function detailsMesures(r) {
       Le bouton « Voir où c'est mesuré » les dessine.</li>
     <li><strong>Marge</strong> : valeurs obtenues si le repérage des vaisseaux est un peu plus ou un peu moins strict ; une
       mesure qui bouge beaucoup dépend fortement de ce repérage.</li>
-    <li><strong>Fiabilité face à l'expert</strong> : sur 107 photos où un expert a tracé les vaisseaux, la mesure du programme
+    <li><strong>Fiabilité face à l'expert</strong> : sur 52 photos de test (jamais vues à l'entraînement) où un expert a tracé les vaisseaux, la mesure du programme
       classe-t-elle les yeux dans le même ordre que celle de l'expert ? (1 = même ordre, 0 = aucun lien).</li>
     <li><strong>Papille</strong> : ${r.papille ? (r.papille.estime ? "diamètre non mesurable sur cette photo, valeur type utilisée" : `diamètre mesuré automatiquement, ${fr(r.papille.diametre_px, 0)} pixels`) : "n/d"} ;
       cette mesure n'a pas pu être vérifiée face à un expert, d'où la prudence sur les micromètres.</li>
-    <li><strong>Pas de valeur « normale »</strong> : les yeux sains d'autres appareils photo donnent des valeurs différentes,
-      car le réseau de repérage des vaisseaux a été entraîné sur un seul appareil ; une comparaison mesurerait surtout l'appareil.
-      Le rapport artères / veines (AVR) n'est pas proposé : sans modèle entraîné pour distinguer artères et veines, il n'est
-      pas fiable (<a href="https://github.com/sheene123/retina-vessel-tracing/blob/main/docs/mesures_zones.md">détails</a>).</li>
+    <li><strong>Artères et veines</strong> : le réseau de repérage, entraîné sur 5 bases d'images de plusieurs appareils, distingue
+      aussi artères et veines (environ 92 % des segments bien classés sur les photos de test ; vue « Artères et veines »).
+      Le rapport artères / veines (AVR) n'est pas proposé : calculé par le programme, il ne classe pas les yeux comme
+      l'expert (corrélation 0,16), car une petite erreur de largeur suffit à le fausser.</li>
+    <li><strong>Comparaison aux yeux sains</strong> : seulement pour les mesures qui ne dépendent pas de l'appareil photo.
+      Sur des yeux sains d'autres appareils, les autres mesures tombent encore loin de la médiane des yeux sains de référence :
+      une comparaison mesurerait surtout l'appareil (<a href="https://github.com/sheene123/retina-vessel-tracing/blob/main/docs/mesures_zones.md">détails</a>).</li>
   </ul>`;
 
   // 2. marqueurs historiques sur toute l'image (en pixels)
@@ -1005,8 +1025,8 @@ function detailsMesures(r) {
       mesures. Les versions « robustes » ont été définies pour que les experts s'accordent mieux
       (<a href="https://github.com/sheene123/retina-vessel-tracing/blob/main/docs/etude_metriques.md">voir l'étude</a>).</li>
     ${r.dice != null ? `<li><strong>Dice</strong> du repérage des vaisseaux sur cette photo, face à l'expert : ${fr(r.dice, 3)} (1 = identique).</li>` : ""}
-    <li>Le réseau de repérage a été entraîné sur les photos DRIVE : sur un autre appareil, vérifiez son travail avec la vue
-      « Segmentation U-Net ».</li>
+    <li>Le réseau de repérage a été entraîné sur 5 bases d'images (DRIVE, HRF, LES-AV, FIVES, CHASE_DB1) : sur un appareil
+      très différent, vérifiez son travail avec la vue « Segmentation U-Net ».</li>
   </ul>`;
   return html;
 }
@@ -1015,7 +1035,7 @@ function badgeZones(f) {
   if (!f) return "n/d";
   const rho = f.correlation_patients;
   const [mot, classe] = rho >= 0.75 ? ["fiable", "fiable"] : rho >= 0.5 ? ["approximative", "approximative"] : ["peu fiable", "peu"];
-  const titre = `Classe les yeux comme l'expert : corrélation ${fr(rho, 2)} sur ${f.images} images annotées (DRIVE, HRF, LES-AV) ; écart typique ${fr(100 * f.ecart_relatif_median, 0)} %`;
+  const titre = `Classe les yeux comme l'expert : corrélation ${fr(rho, 2)} sur ${f.images} images de test annotées (DRIVE, HRF, LES-AV) ; écart typique ${fr(100 * f.ecart_relatif_median, 0)} %`;
   return `<span class="badge ${classe}" title="${echapper(titre)}">${mot} (${fr(rho, 2)})</span>`;
 }
 

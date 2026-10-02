@@ -26,8 +26,11 @@ from pathlib import Path
 
 RACINE = Path(__file__).resolve().parents[1]
 FICHIERS = {
-    "modeles/unet_drive.onnx": "unet_drive.onnx",
-    "resultats/etude_metriques/fiabilite_unet.json": "fiabilite.json",
+    "modeles/unet_av.onnx": "unet_av.onnx",
+    "resultats/etude_metriques_unet_av/fiabilite_unet.json": "fiabilite.json",
+    "resultats/fiabilite_zones.json": "fiabilite_zones.json",
+    "resultats/reperes_zones.json": "reperes_zones.json",
+    "resultats/unet_av.json": "unet_av_resultats.json",
     "modeles/troubles.onnx": "troubles.onnx",
     "resultats/troubles/troubles_demo.json": "troubles.json",
     "resultats/troubles/resultats.json": "troubles_resultats.json",
@@ -195,8 +198,11 @@ tags: [medical-imaging, retina, vessel-segmentation, fundus, onnx]
 Modèles de la démo [retina-vessel-tracing](https://huggingface.co/spaces/sheenee261/retina-vessel-tracing)
 (code : [sheene123/retina-vessel-tracing](https://github.com/sheene123/retina-vessel-tracing), commit `{commit}`).
 
-- `unet_drive.onnx` : U-Net de segmentation des vaisseaux, entraîné sur DRIVE. Dice {fr(mesure["unet"]["dice"], 3)}, AUC {fr(mesure["unet"]["auc"], 3)}
-  sur les 20 images de test (recalculés indépendamment avant publication).
+- `unet_av.onnx` : U-Net multi-appareils, deux sorties : vaisseaux (`logits`) et artère plutôt que veine
+  (`arteres`). Entraîné sur DRIVE_AV, HRF-AV, LES-AV, FIVES et CHASE_DB1 ; Dice {fr(mesure["unet"]["dice"], 3)}, AUC
+  {fr(mesure["unet"]["auc"], 3)} sur les 20 images de test DRIVE (recalculés indépendamment avant publication). Dice sur
+  les parties test des autres bases et classement artères / veines : `unet_av_resultats.json` ; fiabilité des
+  mesures autour de la papille : `fiabilite_zones.json` ; repères yeux sains : `reperes_zones.json`.
 - `troubles.onnx` : {resultats.get("architecture", "efficientnet_b0").split(".")[0]}, 6 troubles de l'œil, entraîné sur {sources or "ODIR-5K"} ;
   sorties calibrées et seuils « possible » par trouble dans `troubles.json`.
 

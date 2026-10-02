@@ -504,7 +504,14 @@ def figures(resultat: dict, dossier: Path) -> None:
 
 
 def lancer(racine: Path, sortie: Path, modele_unet: Path, n_paires: int, travailleurs: int, graine: int = 0) -> dict:
-    from .unet import charger_modele, predire
+    if "unet_av" in modele_unet.name:  # U-Net multi-appareils : on garde la sortie « vaisseau »
+        from .unet_av import charger_modele
+        from .unet_av import predire as predire_av
+
+        def predire(modele, rgb, masque):
+            return predire_av(modele, rgb, masque)[0]
+    else:
+        from .unet import charger_modele, predire
 
     debut = time.perf_counter()
     ids = lister(racine, "test")

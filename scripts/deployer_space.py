@@ -16,6 +16,27 @@ from pathlib import Path
 from huggingface_hub import HfApi
 
 RACINE = Path(__file__).resolve().parents[1]
+# fichiers de la démo -> noms possibles dans le registre, du plus récent au plus ancien. Le U-Net
+# est toujours servi sous « unet.onnx » : la page reconnaît le modèle multi-appareils à sa sortie
+# « arteres », et un retour à une ancienne version (unet_drive.onnx) reste possible.
+REGISTRE = {
+    "unet.onnx": ("unet_av.onnx", "unet_drive.onnx"),
+    "fiabilite.json": ("fiabilite.json",),
+    "troubles.onnx": ("troubles.onnx",),
+    "troubles.json": ("troubles.json",),
+}
+OPTIONNELS = ("fiabilite_zones.json", "reperes_zones.json")  # absents des versions avant v0.4.0
+LOCAL = {
+    "unet.onnx": ("modeles/unet_av.onnx", "modeles/unet_drive.onnx"),
+    "fiabilite.json": (
+        "resultats/etude_metriques_unet_av/fiabilite_unet.json",
+        "resultats/etude_metriques/fiabilite_unet.json",
+    ),
+    "troubles.onnx": ("modeles/troubles.onnx",),
+    "troubles.json": ("resultats/troubles/troubles_demo.json",),
+    "fiabilite_zones.json": ("resultats/fiabilite_zones.json",),
+    "reperes_zones.json": ("resultats/reperes_zones.json",),
+}
 
 
 def main() -> int:
@@ -36,9 +57,6 @@ def main() -> int:
             shutil.copy(roue, site / roue.name)
         for fichier in ("index.html", "pont.py", "README.md"):
             shutil.copy(RACINE / "demo" / "web" / fichier, site / fichier)
-        # fiabilité des mesures en zones (calculée sans entraînement, versionnée)
-        if (RACINE / "resultats" / "fiabilite_zones.json").exists():
-            shutil.copy(RACINE / "resultats" / "fiabilite_zones.json", site / "fiabilite_zones.json")
         exemples = RACINE / "demo" / "web" / "exemples"  # yeux malades à diagnostic connu (JSIEC)
         if exemples.is_dir():
             shutil.copytree(exemples, site / "exemples")
@@ -53,21 +71,38 @@ def main() -> int:
         if args.depuis_registre:
             # modèles d'une version du registre (déploiement continu)
             from huggingface_hub import hf_hub_download
+            from huggingface_hub.errors import EntryNotFoundError
 
-            for fichier in ("unet_drive.onnx", "fiabilite.json", "troubles.onnx", "troubles.json"):
-                chemin = hf_hub_download(args.registre, fichier, repo_type="model", revision=args.depuis_registre)
-                shutil.copy(chemin, site / fichier)
+            def telecharger(nom: str) -> Path | None:
+                try:
+                    return Path(hf_hub_download(args.registre, nom, repo_type="model", revision=args.depuis_registre))
+                except EntryNotFoundError:
+                    return None
+
+            unet = None
+            for cible, noms in REGISTRE.items():
+                trouve = next(((n, c) for n in noms if (c := telecharger(n)) is not None), None)
+                if trouve is None:
+                    raise SystemExit(f"{cible} : aucun de {noms} dans la version {args.depuis_registre}")
+                shutil.copy(trouve[1], site / cible)
+                if cible == "unet.onnx":
+                    unet = trouve[0]
+            for nom in OPTIONNELS:
+                chemin = telecharger(nom)
+                if chemin is not None:
+                    shutil.copy(chemin, site / nom)
+                elif nom == "fiabilite_zones.json" and unet == "unet_drive.onnx":
+                    # ancienne version : fiabilité des zones du premier U-Net, gardée dans le dépôt
+                    shutil.copy(RACINE / "resultats" / "fiabilite_zones_unet_drive.json", site / nom)
         else:
             # modèles locaux (poste d'entraînement)
-            for source, cible in (
-                (RACINE / "modeles" / "unet_drive.onnx", "unet_drive.onnx"),
-                (RACINE / "resultats" / "etude_metriques" / "fiabilite_unet.json", "fiabilite.json"),
-                (RACINE / "modeles" / "troubles.onnx", "troubles.onnx"),
-                (RACINE / "resultats" / "troubles" / "troubles_demo.json", "troubles.json"),
-            ):
-                if not source.exists():
+            for cible, sources in LOCAL.items():
+                source = next((RACINE / s for s in sources if (RACINE / s).exists()), None)
+                if source is None:
+                    if cible in OPTIONNELS:
+                        continue
                     raise SystemExit(
-                        f"{source} manquant : entraînez et exportez les modèles, ou utilisez --depuis-registre"
+                        f"{sources[0]} manquant : entraînez et exportez les modèles, ou utilisez --depuis-registre"
                     )
                 shutil.copy(source, site / cible)
         if args.local:

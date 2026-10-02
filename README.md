@@ -64,6 +64,10 @@ comparée à celle de l'expert. Chaque mesure porte aussi un indicateur de fiabi
 [l'étude](docs/etude_metriques.md) (la mesure classe-t-elle les patients comme l'expert ?) et
 l'accord entre deux experts sur ce marqueur. Trois images de test sont tirées au hasard à chaque
 visite.
+Depuis la v0.4.0, le U-Net est **multi-appareils** (5 bases d'images) et distingue **artères et veines** (92 % des
+segments bien classés sur des photos de test) : la démo mesure dans des anneaux autour de la papille, avec le calibre
+des artérioles (CRAE) et des veinules (CRVE), et ne situe parmi des yeux sains que la mesure qui a passé un contrôle
+du biais d'appareil ([docs/mesures_zones.md](docs/mesures_zones.md)).
 C'est une démonstration de recherche, pas un diagnostic.
 
 La démo web ([demo/web/](demo/web/)) exécute le paquet Python **dans le navigateur** avec
@@ -223,7 +227,10 @@ python scripts/telecharger_drive.py --second-observateur   # annotations du 2e e
 pytest                                       # tests (images synthétiques, pas besoin de DRIVE)
 python -m vaisseaux.benchmark                # évaluation complète sur DRIVE
 pip install -e ".[ml]" && python -m vaisseaux.unet && python -m vaisseaux.etude   # étude des métriques
-python -m vaisseaux.unet --onnx modeles/unet_drive.onnx   # export du U-Net pour la démo web
+python -m vaisseaux.unet --onnx modeles/unet_drive.onnx   # export du premier U-Net (DRIVE seul)
+python scripts/preparer_vaisseaux_multi.py --av ... --fives ... --chase ... --sortie ...   # 5 bases
+python -m vaisseaux.unet_av --donnees ... --sortie modeles/unet_av.pt   # U-Net multi-appareils (GPU, Kaggle)
+python -m vaisseaux.unet_av --exporter modeles/unet_av.pt                # export ONNX pour la démo web
 uvicorn vaisseaux.api:app --reload           # API en local
 ```
 
@@ -236,7 +243,9 @@ src/vaisseaux/
   graphe.py          carte de coût, Dijkstra, A*
   evaluation.py      métriques de tracé et de segmentation, bootstrap, Wilcoxon
   biomarqueurs.py    marqueurs vasculaires (densité, dimension fractale, calibre, tortuosité…)
-  unet.py            U-Net de segmentation (PyTorch, optionnel)
+  unet.py            premier U-Net de segmentation, DRIVE seul (PyTorch, optionnel)
+  unet_av.py         U-Net multi-appareils : vaisseaux et artères/veines
+  zones.py           papille, zones B et C, mesures en diamètres de papille, CRAE/CRVE
   etude.py           étude « métriques de segmentation contre marqueurs »
   hypertension.py    étude rétinopathie hypertensive (ODIR-5K) : marqueurs contre réseau
   benchmark.py       protocole d'évaluation entraînement / test
@@ -261,8 +270,9 @@ resultats/           résultats versionnés du dernier benchmark
 - [x] Troubles entraînés sur quatre bases dédoublonnées et testés sur un hôpital jamais vu (JSIEC), seuils adaptés aux troubles rares
 - [x] Professeur RETFound pour le glaucome (distillation), cartes de chaleur, contrôle de qualité de la photo, yeux malades à diagnostic connu (v0.3.0)
 - [x] Mesures dans les zones autour de la papille, en diamètres de papille, avec marge, fiabilité face à l'expert (107 images) et export CSV ; AVR sans apprentissage testé et écarté ([docs/mesures_zones.md](docs/mesures_zones.md))
-- [ ] Modèle artères / veines entraîné (DRIVE_AV, HRF-AV, LES-AV) pour l'AVR, et U-Net multi-appareils ; avant tout
-      usage lié au risque cardiovasculaire
+- [x] U-Net multi-appareils (5 bases) qui distingue artères et veines, CRAE et CRVE dans la démo, contrôle du biais
+      d'appareil des repères yeux sains (v0.4.0) ([docs/mesures_zones.md](docs/mesures_zones.md))
+- [ ] AVR fiable : largeur des vaisseaux au dixième de pixel (l'AVR de la chaîne complète ne suit pas encore l'expert)
 - [ ] Prétraitement : réglage adaptatif du débruitage, correction d'illumination
 - [ ] Coût du tracé tiré du U-Net
 - [ ] Évaluation : second observateur (archive officielle), tolérance adaptée au calibre
