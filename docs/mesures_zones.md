@@ -121,8 +121,14 @@ l'expert (corrélation 0,85). Avec la chaîne complète, c'est 0,16 : le classem
 cause, ce sont les **largeurs** mesurées sur la segmentation. L'AVR est un rapport de deux
 largeurs de quelques pixels, qui varie peu d'un œil à l'autre (0,58 à 0,73 entre les quartiles des
 yeux sains) : une erreur d'un pixel suffit à le fausser. La démo n'affiche donc que CRAE et CRVE.
-Piste : mesurer la largeur au dixième de pixel, sur le profil de probabilité du U-Net plutôt que sur
-la segmentation binaire.
+Mesurer la largeur au dixième de pixel n'aide pas. La largeur a été lue sur le profil de
+probabilité du U-Net en travers du vaisseau, tous les quarts de pixel
+([largeurs_profil](../src/vaisseaux/zones.py), `scripts/fiabilite_zones.py --largeur profil`).
+Le choix se faisait sur les parties « training » : la corrélation de l'AVR avec l'expert y tombe
+de 0,56 à 0,28, et celle du CRAE de 0,79 à 0,72. La méthode est écartée, et l'AVR reste masqué.
+Explication probable, non vérifiée : le profil de probabilité est plus flou que le bord net tracé
+par l'expert, et ce flou pèse davantage sur les fines artères que sur les veines. Il faudrait sans
+doute un modèle entraîné à mesurer directement la largeur.
 
 ## Repères « yeux sains »
 

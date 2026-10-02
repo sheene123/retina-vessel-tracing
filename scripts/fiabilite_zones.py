@@ -37,6 +37,9 @@ def main() -> int:
     parser.add_argument("--racine", type=Path, required=True)
     parser.add_argument("--modele", type=Path, default=RACINE / "modeles" / "unet_av.onnx")
     parser.add_argument("--parties", default="training,test")
+    parser.add_argument(
+        "--largeur", choices=("binaire", "profil"), default="binaire", help="largeur des vaisseaux en zone B"
+    )
     parser.add_argument("--sortie", type=Path, default=RACINE / "resultats" / "fiabilite_zones.json")
     args = parser.parse_args()
     session = ort.InferenceSession(str(args.modele), providers=["CPUExecutionProvider"])
@@ -56,8 +59,11 @@ def main() -> int:
                 auto = (proba >= SEUIL_UNET) & masque
                 disque = papille(rgb, masque, auto)
                 estimes += disque["diametre_estime"]
-                m_auto = mesurer_zones(auto, disque, arteres)
-                m_expert = mesurer_zones(expert & masque, disque, carte_expert(rouge, bleu))
+                profil = args.largeur == "profil"
+                m_auto = mesurer_zones(auto, disque, arteres, proba if profil else None)
+                m_expert = mesurer_zones(
+                    expert & masque, disque, carte_expert(rouge, bleu), (expert & masque) if profil else None
+                )
                 for k in MESURES_ZONES + (MESURES_AV if arteres is not None else ()):
                     valeurs.setdefault(k, []).append((m_auto[k], m_expert[k]))
                 images.append(f"{base}/{partie}/{Path(image).name}")
@@ -73,6 +79,7 @@ def main() -> int:
     sortie = {
         "modele": args.modele.name,
         "parties": args.parties,
+        "largeur": args.largeur,
         "mesures": fiabilite,
         "diametre_papille_par_defaut": estimes,
         "images": len(images),

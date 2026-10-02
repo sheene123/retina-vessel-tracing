@@ -110,9 +110,44 @@ KNUDTSON_ARTERES, KNUDTSON_VEINES = 0.88, 0.95  # formules révisées de Knudtso
 NB_VAISSEAUX_KNUDTSON = 6
 
 
-def segments_zone(vaisseaux: np.ndarray, disque: dict, zone: tuple[float, float] = ZONE_B) -> list[dict]:
+def largeurs_profil(
+    carte: np.ndarray, lignes: np.ndarray, colonnes: np.ndarray, demi: float = 12.0, pas: float = 0.25
+) -> np.ndarray:
+    """Largeur au dixième de pixel en chaque point d'un segment : profil de la carte (probabilité
+    « vaisseau » du U-Net, ou masque d'expert) en travers du segment, lu tous les quarts de pixel
+    par interpolation, puis intégré sur la partie centrale (jusqu'à ce que le profil retombe sous
+    0,05 de chaque côté). Une carte à bords nets (0 ou 1) donne exactement la largeur traversée ;
+    une probabilité donne une largeur continue, sans le pas d'un pixel de la segmentation binaire."""
+    points = np.stack([lignes, colonnes], axis=1).astype(np.float64)
+    if len(points) < 2:
+        return np.full(len(points), np.nan)
+    centre = points.mean(axis=0)
+    _, _, axes = np.linalg.svd(points - centre, full_matrices=False)
+    normale = np.array([-axes[0][1], axes[0][0]])  # perpendiculaire à l'axe principal du segment
+    t = np.arange(-demi, demi + pas / 2, pas)
+    coords = points[:, :, None] + normale[None, :, None] * t[None, None, :]  # (n, 2, k)
+    profils = ndi.map_coordinates(
+        carte.astype(np.float32), coords.transpose(1, 0, 2).reshape(2, -1), order=1, mode="constant"
+    )
+    profils = profils.reshape(len(points), -1)
+    milieu = len(t) // 2
+    sortie = np.empty(len(points))
+    for i, v in enumerate(profils):
+        bas = np.flatnonzero(v[:milieu] < 0.05)
+        haut = np.flatnonzero(v[milieu:] < 0.05)
+        debut = bas[-1] + 1 if bas.size else 0
+        fin = milieu + haut[0] if haut.size else len(v)
+        sortie[i] = np.clip(v[debut:fin], 0, 1).sum() * pas
+    return sortie
+
+
+def segments_zone(
+    vaisseaux: np.ndarray, disque: dict, zone: tuple[float, float] = ZONE_B, carte: np.ndarray | None = None
+) -> list[dict]:
     """Segments de vaisseau (entre bifurcations) qui traversent la zone : pixels du squelette dans
-    la zone, longueur, largeur médiane (distance au fond) et angle autour de la papille."""
+    la zone, longueur, largeur médiane et angle autour de la papille. Largeur : distance au fond de
+    la segmentation binaire (au pixel près) ; avec `carte`, profil en travers du vaisseau (au
+    dixième de pixel, voir `largeurs_profil`)."""
     from skimage.morphology import skeletonize
 
     from vaisseaux.biomarqueurs import calibres, segments
@@ -137,7 +172,11 @@ def segments_zone(vaisseaux: np.ndarray, disque: dict, zone: tuple[float, float]
                 "lignes": lignes,
                 "colonnes": colonnes,
                 "longueur": int(lignes.size),
-                "largeur": float(np.median(largeurs[lignes, colonnes])),
+                "largeur": float(
+                    np.nanmedian(largeurs_profil(carte, lignes, colonnes))
+                    if carte is not None
+                    else np.median(largeurs[lignes, colonnes])
+                ),
                 "angle": float(np.arctan2(lignes.mean() - disque["ligne"], colonnes.mean() - disque["colonne"])),
             }
         )
@@ -247,7 +286,9 @@ def calibres_av(segs: list[dict], arteres: np.ndarray, diametre_papille: float) 
     return {"crae_um": crae * echelle, "crve_um": crve * echelle, "avr": crae / crve}
 
 
-def mesurer_zones(vaisseaux: np.ndarray, disque: dict, arteres: np.ndarray | None = None) -> dict[str, float]:
+def mesurer_zones(
+    vaisseaux: np.ndarray, disque: dict, arteres: np.ndarray | None = None, carte: np.ndarray | None = None
+) -> dict[str, float]:
     """Mesures comparables d'une photo à l'autre :
 
     - calibre_zone_b : largeur moyenne des 6 plus gros vaisseaux qui traversent la zone B, en
@@ -265,7 +306,7 @@ def mesurer_zones(vaisseaux: np.ndarray, disque: dict, arteres: np.ndarray | Non
     from vaisseaux.biomarqueurs import tortuosite_ponderee
 
     dp = disque["diametre"]
-    segs = segments_zone(vaisseaux, disque, ZONE_B)
+    segs = segments_zone(vaisseaux, disque, ZONE_B, carte)
     largeurs = sorted((s["largeur"] for s in segs), reverse=True)[:NB_VAISSEAUX_KNUDTSON]
     calibre = float(np.mean(largeurs)) / dp if len(largeurs) >= 3 else float("nan")
     zone_c = anneau(vaisseaux.shape, disque, ZONE_C)

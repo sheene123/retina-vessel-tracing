@@ -31,6 +31,7 @@ NOMS = {
     "clahe_median": "CLAHE + médian",
     "clahe_bilateral": "CLAHE + bilatéral",
     "clahe_nl_means": "CLAHE + NL-means",
+    "unet": "Réseau U-Net",
 }
 # seuils de binarisation choisis sur les images d'entraînement DRIVE (resultats/evaluation.json)
 SEUILS = {
@@ -40,6 +41,7 @@ SEUILS = {
     "clahe_median": 0.06,
     "clahe_bilateral": 0.02,
     "clahe_nl_means": 0.08,
+    "unet": 0.5,  # seuil de la segmentation affichée
 }
 _etat: dict = {}
 
@@ -106,6 +108,16 @@ def charger_image(octets, octets_verite=None) -> str:
 
 
 def _cartes(config: str):
+    if config == "unet":
+        # probabilité « vaisseau » du U-Net (calculée côté JavaScript, voir recevoir_unet)
+        if "proba" not in _etat:
+            raise ValueError("le réseau U-Net n'a pas encore été lancé sur cette image")
+        if "unet" not in _etat["cartes"]:
+            from types import SimpleNamespace
+
+            _etat["cartes"]["unet"] = SimpleNamespace(vaisseaux=_etat["proba"])
+            _etat.setdefault("durees", {})["unet"] = 0.0
+        return _etat["cartes"]["unet"]
     if config not in _etat["cartes"]:
         debut = time.perf_counter()
         _etat["cartes"][config] = pretraiter(_etat["rgb"], _etat["masque"], CONFIGURATIONS[config])
@@ -302,6 +314,7 @@ def recevoir_unet(octets, octets_arteres=None) -> None:
 
     proba = proba_de(octets)
     _etat["proba"] = proba
+    _etat["cartes"].pop("unet", None)  # le tracé « Réseau U-Net » reprend la nouvelle carte
     _etat.pop("arteres", None)
     if octets_arteres is not None:
         _etat["arteres"] = proba_de(octets_arteres)

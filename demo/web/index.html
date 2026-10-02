@@ -306,12 +306,12 @@
 
 <section class="bloc" aria-labelledby="titreGalerie">
   <div class="carte">
-    <h2 id="titreGalerie">Comparer les six prétraitements</h2>
+    <h2 id="titreGalerie">Comparer les sept cartes des vaisseaux</h2>
     <p class="aide" style="margin-top:0; max-width:75ch">Chaque vignette montre ce que « voit » le programme : plus un pixel est clair, plus il ressemble à un vaisseau.
       Sur les exemples annotés, l'AUC et le MCC mesurent l'accord avec l'expert (1 = parfait). Cliquez une vignette pour
       l'utiliser dans le tracé. À retenir : <strong>la meilleure carte n'est pas toujours celle qui donne le meilleur tracé</strong>
       (<a href="https://github.com/sheene123/retina-vessel-tracing/blob/main/docs/evaluation.md">analyse complète</a>).</p>
-    <button id="lancerGalerie" class="principal" type="button" disabled style="margin-top:12px">Calculer les 6 cartes</button>
+    <button id="lancerGalerie" class="principal" type="button" disabled style="margin-top:12px">Calculer les 7 cartes</button>
     <div class="galerie" id="galerie"></div>
   </div>
 </section>
@@ -359,6 +359,7 @@ const CONFIGS = {
   clahe_gaussien: ["CLAHE + flou gaussien", "Lisse le bruit : meilleure carte au pixel, mais les vaisseaux s'élargissent et les tracés ne s'améliorent pas."],
   clahe_median: ["CLAHE + filtre médian", "Retire les points isolés en conservant les bords."],
   clahe_bilateral: ["CLAHE + filtre bilatéral", "Lisse en préservant les contours, mais crée parfois des raccourcis entre vaisseaux voisins."],
+  unet: ["Réseau U-Net", "Le chemin suit la carte du réseau de neurones au lieu d'un filtre : sur les 20 images de test, il s'écarte moins du vaisseau (6 pixels contre 10 en moyenne). Le réseau tourne au premier usage (1 à 2 s)."],
 };
 const VUES = { originale: "Originale", vert: "Canal vert", rehaussee: "Contraste amélioré", vaisseaux: "Ce que voit le programme", segmentation: "Segmentation U-Net", arteres: "Artères et veines", verite: "Annotation de l'expert", chaleur: "Zones regardées par le réseau", zones: "Zones de mesure" };
 // mesures dans les zones autour de la papille (vaisseaux.zones) : comparables d'une photo à l'autre
@@ -396,7 +397,7 @@ const CONSIGNES = ["", "Cliquez le point de départ sur un vaisseau", "Cliquez l
 
 const $ = (id) => document.getElementById(id);
 const toile = $("toile"), ctx = toile.getContext("2d"), survol = $("survol"), sctx = survol.getContext("2d");
-const etat = { arteres: false, qualite: null, chaleur: false, cartesTroubles: null, etiquette: null, fichierEnAttente: null, pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
+const etat = { unetPret: false, arteres: false, qualite: null, chaleur: false, cartesTroubles: null, etiquette: null, fichierEnAttente: null, pret: false, occupe: false, points: [], vue: "originale", fond: null, verite: false, segmentation: false, resultat: null, source: null, apercu: null };
 let sessionUnet = null, sessionTroubles = null, configTroubles = null;
 const DESCRIPTIONS_TROUBLES = {
   diabete: "atteinte des petits vaisseaux due au diabète : petites hémorragies, dépôts jaunâtres",
@@ -614,7 +615,7 @@ async function voirZones(cle) {
 
 async function installer(infos, source) {
   for (const t of [toile, survol]) { t.width = infos.largeur; t.height = infos.hauteur; }
-  Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false, arteres: false, etiquette: null,
+  Object.assign(etat, { verite: infos.verite, source, points: [], resultat: null, apercu: null, segmentation: false, arteres: false, unetPret: false, etiquette: null,
     qualite: infos.qualite || null, chaleur: false, cartesTroubles: null });
   if (!vueDisponible(etat.vue)) etat.vue = "originale";
   $("resultatMesures").replaceChildren();
@@ -625,7 +626,7 @@ async function installer(infos, source) {
   document.querySelectorAll("#exemples button, #exemplesMalades button").forEach((b) => b.classList.toggle("actif", b.dataset.id === source));
   consigne("Préparation de l'image");
   await pause();
-  appeler("preparer", $("configA").value);
+  await preparerConfigs([$("configA").value]);
   await afficherVue(etat.vue);
   $("squelette").hidden = true;
   const recadrage = infos.recadre
@@ -760,6 +761,7 @@ async function tracer() {
   if (etat.points.length < 2) return;
   const [[x0, y0], [x1, y1]] = etat.points;
   await occuper("Recherche du plus court chemin", async () => {
+    await preparerConfigs(configs());
     etat.resultat = JSON.parse(appeler("tracer", x0, y0, x1, y1, JSON.stringify(configs()), $("algo").value, Number($("alpha").value)));
     dessiner();
     resumer();
@@ -842,6 +844,7 @@ async function galerie() {
   const cles = Object.keys(CONFIGS);
   for (const [i, cle] of cles.entries()) {
     const ok = await occuper(`Carte ${i + 1} sur ${cles.length} : ${CONFIGS[cle][0]}`, async () => {
+      await preparerConfigs([cle]);
       const v = JSON.parse(appeler("vignette", cle));
       const b = document.createElement("button");
       b.type = "button";
@@ -877,7 +880,7 @@ async function changerConfig() {
   majGalerie();
   if (!etat.fond) return;
   await occuper("Préparation du prétraitement", async () => {
-    for (const c of configs()) appeler("preparer", c);
+    await preparerConfigs(configs());
     if (["vert", "rehaussee", "vaisseaux"].includes(etat.vue)) await afficherVue(etat.vue);
   });
   await tracer();
@@ -920,23 +923,36 @@ async function cliquer(e) {
   else await tracer();
 }
 
+// lance le U-Net une fois par image (mesures, vues et tracé « Réseau U-Net » s'en servent)
+async function executerUnet() {
+  if (etat.unetPret) return;
+  if (!sessionUnet) {
+    preparerOrt();
+    sessionUnet = await ort.InferenceSession.create("unet.onnx");
+  }
+  const octets = appeler("entree_unet");
+  const [h, w] = JSON.parse(appeler("forme_unet"));
+  const entree = new Float32Array(octets.slice().buffer);
+  const sortie = await sessionUnet.run({ image: new ort.Tensor("float32", entree, [1, 3, h, w]) });
+  const octets_ = (t) => new Uint8Array(t.data.buffer, t.data.byteOffset, t.data.byteLength);
+  // U-Net multi-appareils : deuxième sortie « arteres » (artère plutôt que veine)
+  if (sortie.arteres) appeler("recevoir_unet", octets_(sortie.logits), octets_(sortie.arteres));
+  else appeler("recevoir_unet", octets_(sortie.logits));
+  etat.unetPret = true;
+  etat.arteres = Boolean(sortie.arteres);
+}
+
+// prépare les cartes des prétraitements choisis ; « Réseau U-Net » lance d'abord le réseau
+async function preparerConfigs(liste) {
+  if (liste.includes("unet")) await executerUnet();
+  for (const c of liste) appeler("preparer", c);
+}
+
 async function mesurerVaisseaux() {
   await occuper("Segmentation par le U-Net et mesure des vaisseaux", async () => {
-    if (!sessionUnet) {
-      preparerOrt();
-      sessionUnet = await ort.InferenceSession.create("unet.onnx");
-    }
-    const octets = appeler("entree_unet");
-    const [h, w] = JSON.parse(appeler("forme_unet"));
-    const entree = new Float32Array(octets.slice().buffer);
-    const sortie = await sessionUnet.run({ image: new ort.Tensor("float32", entree, [1, 3, h, w]) });
-    const octets_ = (t) => new Uint8Array(t.data.buffer, t.data.byteOffset, t.data.byteLength);
-    // U-Net multi-appareils : deuxième sortie « arteres » (artère plutôt que veine)
-    if (sortie.arteres) appeler("recevoir_unet", octets_(sortie.logits), octets_(sortie.arteres));
-    else appeler("recevoir_unet", octets_(sortie.logits));
+    await executerUnet();
     const r = JSON.parse(appeler("mesures"));
     etat.segmentation = true;
-    etat.arteres = Boolean(sortie.arteres);
     afficherMesures(r);
     await afficherVue("segmentation");
   });

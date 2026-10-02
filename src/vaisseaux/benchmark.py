@@ -1,4 +1,10 @@
-"""Protocole d'évaluation sur DRIVE : quel prétraitement donne les meilleurs tracés ?
+"""Protocole d'évaluation sur DRIVE : quelle carte des vaisseaux donne les meilleurs tracés ?
+
+Cartes comparées : six prétraitements classiques (filtre de Frangi) et la probabilité
+« vaisseau » des deux U-Net (ONNX) : le premier, entraîné sur DRIVE seul, et le U-Net
+multi-appareils. Les 20 images de test n'ont été vues par aucun des deux réseaux ; les
+images d'entraînement, si : pour les U-Net, le choix de alpha et du seuil y est donc
+optimiste (un réseau y est plus sûr de lui que sur des images nouvelles).
 
 1. Sur les 20 images d'entraînement : choix, pour chaque configuration, du paramètre de
    coût alpha (meilleur F1 de tracé) et du seuil de binarisation (meilleur Dice).
@@ -41,7 +47,36 @@ CONFIGURATIONS = {
     "clahe_bilateral": ParametresPretraitement(clahe=True, debruitage="bilateral"),
     "clahe_nl_means": ParametresPretraitement(clahe=True, debruitage="nl_means"),
 }
+RESEAUX = {"unet_drive": "modeles/unet_drive.onnx", "unet_av": "modeles/unet_av.onnx"}
 REFERENCE = "vert_brut"
+_SESSIONS: dict = {}
+
+
+class _CarteReseau:
+    """Même interface que CartesPretraitement pour le tracé : .vaisseaux dans [0, 1]."""
+
+    def __init__(self, vaisseaux: np.ndarray):
+        self.vaisseaux = vaisseaux
+
+
+def cartes_de(nom: str, rgb: np.ndarray, masque: np.ndarray):
+    """Carte des vaisseaux d'une configuration : prétraitement classique ou U-Net (ONNX)."""
+    if nom not in RESEAUX:
+        return pretraiter(rgb, masque, CONFIGURATIONS[nom])
+    import onnxruntime as ort
+
+    from .pretraitement import normaliser_pour_reseau
+
+    if nom not in _SESSIONS:
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 2
+        chemin = Path(__file__).resolve().parents[2] / RESEAUX[nom]
+        _SESSIONS[nom] = ort.InferenceSession(str(chemin), options, providers=["CPUExecutionProvider"])
+    h, w = masque.shape
+    logits = _SESSIONS[nom].run(None, {"image": normaliser_pour_reseau(rgb, masque, 32)[None]})[0][0][:h, :w]
+    return _CarteReseau((1 / (1 + np.exp(-logits))) * masque)
+
+
 ALPHAS = (1.0, 2.0, 3.0)
 SEUILS = np.round(np.arange(0.01, 0.61, 0.01), 2)
 METRIQUES_TRACE = (
@@ -74,7 +109,7 @@ def _image_entrainement(tache: tuple) -> dict:
     paires = echantillonner_paires(im.verite, im.masque, n_paires, np.random.default_rng([graine, int(ident)]))
     sortie = {}
     for nom in configs:
-        cartes = pretraiter(im.rgb, im.masque, CONFIGURATIONS[nom])
+        cartes = cartes_de(nom, im.rgb, im.masque)
         dice = [metriques_binaires(cartes.vaisseaux >= s, im.verite, im.masque)["dice"] for s in SEUILS]
         f1 = {
             a: float(np.mean([m["f1"] for m in _tracer(cartes, im.masque, paires, im.verite, a, tolerance)]))
@@ -95,7 +130,7 @@ def _image_test(tache: tuple) -> dict:
             "cl_dice": cl_dice(im.verite2 & im.masque, im.verite & im.masque),
         }
     for nom, (alpha, seuil) in choix.items():
-        cartes = pretraiter(im.rgb, im.masque, CONFIGURATIONS[nom])
+        cartes = cartes_de(nom, im.rgb, im.masque)
         binaire = (cartes.vaisseaux >= seuil) & im.masque
         sortie["configs"][nom] = {
             "pixels": {
@@ -118,7 +153,8 @@ def _holm(p_valeurs: dict[str, float]) -> dict[str, float]:
 
 
 def lancer(racine: Path, sortie: Path, n_paires: int, graine: int, tolerance: float, travailleurs: int, rapide: bool):
-    configs = list(CONFIGURATIONS) if not rapide else [REFERENCE, "clahe_nl_means"]
+    reseaux = [n for n, c in RESEAUX.items() if (Path(__file__).resolve().parents[2] / c).exists()]
+    configs = (list(CONFIGURATIONS) if not rapide else [REFERENCE, "clahe_nl_means"]) + reseaux
     ids_train, ids_test = lister(racine, "entrainement"), lister(racine, "test")
     if rapide:
         ids_train, ids_test = ids_train[:3], ids_test[:3]
@@ -142,7 +178,9 @@ def lancer(racine: Path, sortie: Path, n_paires: int, graine: int, tolerance: fl
             "paires_par_image": n_paires,
             "tolerance_px": tolerance,
             "graine": graine,
-            "parametres": {nom: asdict(CONFIGURATIONS[nom]) for nom in configs},
+            "parametres": {
+                nom: asdict(CONFIGURATIONS[nom]) if nom in CONFIGURATIONS else RESEAUX[nom] for nom in configs
+            },
             "choix_sur_entrainement": {nom: {"alpha": a, "seuil": s} for nom, (a, s) in choix.items()},
         },
         "configs": {},

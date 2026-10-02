@@ -38,3 +38,16 @@ def test_unet_av_formes_et_augmentation():
     assert (x[:, ~msk] == 0).all()  # hors champ de vue : zéro, comme dans la démo
     vaisseau, artere = unet_av.predire(modele, rgb, masque)
     assert vaisseau.shape == artere.shape == masque.shape
+
+
+def test_largeurs_profil_vaisseau_oblique():
+    from vaisseaux.zones import largeurs_profil
+
+    lignes, colonnes = np.mgrid[:80, :80]
+    distance = np.abs((lignes - 40) - 0.5 * (colonnes - 40)) / np.hypot(1, 0.5)
+    carte = (distance <= 2.5).astype(float)  # vaisseau oblique de 5 pixels de large
+    ls = np.arange(25, 56)
+    cs = 40 + 2 * (ls - 40)
+    garde = (cs >= 0) & (cs < 80)
+    largeur = np.median(largeurs_profil(carte, ls[garde], cs[garde]))
+    assert 4.5 < largeur < 6.0  # au demi-pixel près (bord pixelisé du masque)

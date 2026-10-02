@@ -108,6 +108,9 @@ def test_chargement_drive(tmp_path):
 def test_benchmark_de_bout_en_bout(tmp_path):
     _faux_drive(tmp_path / "DRIVE")
     resume = lancer(tmp_path / "DRIVE", tmp_path / "sortie", 2, 0, 2.0, 1, rapide=True)
-    assert set(resume["configs"]) == {"vert_brut", "clahe_nl_means"}
+    # les U-Net (ONNX) s'ajoutent quand leurs modèles sont présents (poste local, pas la CI)
+    from vaisseaux.benchmark import RESEAUX
+
+    assert set(resume["configs"]) - set(RESEAUX) == {"vert_brut", "clahe_nl_means"}
     assert 0 <= resume["configs"]["vert_brut"]["traces"]["f1"]["moyenne"] <= 1
     assert (tmp_path / "sortie" / "evaluation.md").read_text().startswith("# Évaluation sur DRIVE")

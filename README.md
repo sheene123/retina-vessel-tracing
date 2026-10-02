@@ -1,4 +1,4 @@
-# Tracé des vaisseaux sanguins rétiniens par plus court chemin
+# Vaisseaux rétiniens et maladies de l'œil : tracé, mesures et dépistage
 
 [![ci](https://github.com/sheene123/retina-vessel-tracing/actions/workflows/ci.yml/badge.svg)](https://github.com/sheene123/retina-vessel-tracing/actions/workflows/ci.yml)
 [![déploiement](https://github.com/sheene123/retina-vessel-tracing/actions/workflows/deploiement.yml/badge.svg)](https://github.com/sheene123/retina-vessel-tracing/actions/workflows/deploiement.yml)
@@ -6,22 +6,46 @@
 
 **Démo en ligne : https://huggingface.co/spaces/sheenee261/retina-vessel-tracing** (tout s'exécute dans le navigateur).
 
-Extraction du tracé d'un vaisseau sanguin sur une image de fond d'œil, à partir du jeu de
-données public [DRIVE](https://drive.grand-challenge.org/). L'image est modélisée comme
-un **graphe dont chaque pixel est un sommet**. À partir de deux points désignés par
-l'utilisateur, un algorithme de **plus court chemin (Dijkstra, ou A\*)** suit le vaisseau
-de l'un à l'autre.
+Projet personnel de recherche sur les photos du fond d'œil, des données publiques jusqu'à une démo
+utilisable dans le navigateur, avec une évaluation systématique sur des données jamais vues.
+**Projet terminé (v1.0.0).**
 
-Projet personnel en cours. Il comprend :
-- le **prétraitement** des images pour réduire le bruit et rehausser les vaisseaux ;
-- l'**exposition de l'algorithme** via une API FastAPI conteneurisée avec Docker et
-  testée par GitHub Actions ;
-- une question de fond : **comment évaluer objectivement un tracé face à une vérité
-  terrain annotée par des experts ?** Voir [docs/evaluation.md](docs/evaluation.md).
+- **Tracer un vaisseau** entre deux points cliqués : l'image devient un graphe de pixels et un plus
+  court chemin (Dijkstra, A\*) suit le vaisseau, guidé par un filtre classique ou par le U-Net.
+- **Segmenter les vaisseaux et distinguer artères et veines**, avec un U-Net entraîné sur cinq bases
+  d'images venant d'appareils différents.
+- **Mesurer les vaisseaux** dans des anneaux autour du nerf optique, comme les logiciels de recherche :
+  largeur des artères (CRAE) et des veines (CRVE), sinuosité, densité.
+- **Repérer six maladies** (rétinopathie diabétique, glaucome, cataracte, DMLA, rétinopathie
+  hypertensive, myopie forte) : probabilités calibrées, cartes de chaleur, contrôle de la qualité
+  de la photo.
+- **MLOps** : registre de modèles versionné, comparaison champion / challenger, validation
+  indépendante en CI, déploiement continu de l'API, de la démo et des releases.
+
+## Résultats en bref
+
+Toutes les valeurs sont mesurées sur des images que le modèle n'a pas vues à l'entraînement.
+
+| Tâche | Résultat | Détails |
+|---|---|---|
+| Segmentation des vaisseaux | Dice de 0,80 à 0,87 sur quatre bases d'autres appareils (HRF, LES-AV, FIVES, CHASE_DB1), 0,84 sur DRIVE | [mesures_zones.md](docs/mesures_zones.md) |
+| Artères et veines | 92 % des segments bien classés (52 photos de test), contre 73 % sans apprentissage | [mesures_zones.md](docs/mesures_zones.md) |
+| Tracé d'un vaisseau (DRIVE) | F1 0,92 ; écart au chemin de l'expert de 6 pixels, contre 10 avec le meilleur filtre classique | [evaluation.md](docs/evaluation.md) |
+| Mesures autour du nerf optique | corrélation de rang avec l'expert de 0,67 à 0,92 selon la mesure (52 photos de test) | [mesures_zones.md](docs/mesures_zones.md) |
+| Six maladies | AUROC d'au moins 0,86 en validation croisée, et d'au moins 0,94 sur 1 000 photos d'un hôpital jamais vu (cinq maladies, test optimiste) | [troubles.md](docs/troubles.md) |
+
+**Ce qui ne marche pas (détaillé dans la documentation) :**
+- le rapport artères / veines (AVR) calculé par la chaîne complète ne suit pas l'expert (0,16), même
+  avec une largeur mesurée au dixième de pixel : il n'est pas affiché ;
+- les repères « yeux sains » mesurent surtout l'appareil photo, sauf pour une mesure : seule celle-ci
+  est comparée à des yeux sains ;
+- le tracé n'est évalué que sur DRIVE.
+
+C'est une démonstration de recherche, pas un dispositif médical.
 
 ![Exemple de tracés](resultats/exemple_trace.png)
 
-## Principe
+## Principe du tracé
 
 ```mermaid
 flowchart LR
@@ -30,6 +54,7 @@ flowchart LR
     C --> D[Débruitage<br/>NL-means, bilatéral…]
     D --> E[Filtre de Frangi<br/>multi-échelle]
     E --> F["Carte de coût<br/>c = 1 / (ε + v)^α"]
+    U[ou probabilité<br/>du U-Net] --> F
     F --> G[Dijkstra / A*<br/>graphe 8-connexe]
     P[Deux points<br/>de l'utilisateur] --> G
     G --> H[Tracé du vaisseau]
@@ -40,7 +65,9 @@ flowchart LR
    vue, pour que le bord du disque ne soit pas pris pour un vaisseau, puis on égalise
    l'histogramme localement (CLAHE). On débruite ensuite ; le niveau de bruit est estimé
    par la méthode d'Immerkær et règle le NL-means. Enfin, le filtre de Frangi
-   multi-échelle donne une « probabilité vaisseau » v ∈ [0, 1] pour chaque pixel.
+   multi-échelle donne une « probabilité vaisseau » v ∈ [0, 1] pour chaque pixel. Variante :
+   v est la probabilité « vaisseau » du U-Net, ce qui divise presque par deux l'écart au chemin
+   de l'expert ([docs/evaluation.md](docs/evaluation.md)).
 2. **Graphe** ([graphe.py](src/vaisseaux/graphe.py)). Chaque pixel du champ de vue est
    relié à ses 8 voisins. Traverser un pixel coûte c = 1 / (ε + v)^α, soit environ 1 dans
    un vaisseau et environ 100^α dans le fond. L'arête (p, q) coûte
@@ -53,8 +80,9 @@ flowchart LR
 ## Démo interactive
 
 [Essayer en ligne](https://huggingface.co/spaces/sheenee261/retina-vessel-tracing) : cliquer deux points sur un
-vaisseau, comparer deux prétraitements sur le même tracé, afficher les vues intermédiaires (canal vert, image
-rehaussée, carte de Frangi, vérité terrain), comparer les cartes des six chaînes et tester sa propre image.
+vaisseau, comparer deux prétraitements (ou le U-Net) sur le même tracé, afficher les vues intermédiaires (canal
+vert, image rehaussée, carte de Frangi, segmentation, artères et veines, zones de mesure, vérité terrain), comparer
+les sept cartes des vaisseaux et tester sa propre image.
 Sur les images DRIVE, le tracé est noté face à l'annotation experte.
 
 **Mesures vasculaires.** Un clic lance le U-Net dans le navigateur (ONNX Runtime Web, environ 2 s),
@@ -190,11 +218,11 @@ maladie chez une personne.
 | Trouble | AUROC validation croisée | AUROC hôpital jamais vu (JSIEC) |
 |---|---|---|
 | Rétinopathie diabétique | 0,90 | 0,943 (106 cas) |
-| Glaucome | 0,90 | 1,000 (13 cas) |
+| Glaucome | 0,90 | 0,9998 (13 cas) |
 | Cataracte | 0,98 | pas de cas |
 | DMLA | 0,94 | 0,953 (74 cas) |
 | Rétinopathie hypertensive | 0,86 | 0,964 (15 cas) |
-| Myopie forte | 1,00 | 1,000 (54 cas) |
+| Myopie forte | 0,996 | 0,9996 (54 cas) |
 
 Version 0.3.0 : un professeur RETFound (modèle de fondation de la rétine) transmet son avis sur le glaucome
 au petit réseau de la démo ; sur les gros plans serrés de la papille, le glaucome passe de 0,872 à
@@ -256,7 +284,7 @@ docs/evaluation.md   méthodologie d'évaluation
 resultats/           résultats versionnés du dernier benchmark
 ```
 
-## En cours et à venir
+## Bilan
 
 - [x] Graphe des pixels, Dijkstra et A\* validés contre SciPy
 - [x] API FastAPI, image Docker, CI GitHub Actions
@@ -266,26 +294,53 @@ resultats/           résultats versionnés du dernier benchmark
 - [x] Mesures vasculaires dans la démo (U-Net en ONNX), avec leur fiabilité mesurée
 - [x] Accord entre experts et marqueurs robustes (tortuosité pondérée au niveau humain)
 - [x] Rétinopathie hypertensive sur ODIR-5K : réseau 0,82, marqueurs 0,72 d'AUROC
-- [x] Modèle ONNX des six troubles de l'œil, probabilités calibrées et panneau simplifié dans la démo
-- [x] Troubles entraînés sur quatre bases dédoublonnées et testés sur un hôpital jamais vu (JSIEC), seuils adaptés aux troubles rares
+- [x] Six troubles de l'œil : quatre bases dédoublonnées, test sur un hôpital jamais vu (JSIEC), probabilités calibrées, seuils adaptés aux troubles rares
 - [x] Professeur RETFound pour le glaucome (distillation), cartes de chaleur, contrôle de qualité de la photo, yeux malades à diagnostic connu (v0.3.0)
-- [x] Mesures dans les zones autour de la papille, en diamètres de papille, avec marge, fiabilité face à l'expert (107 images) et export CSV ; AVR sans apprentissage testé et écarté ([docs/mesures_zones.md](docs/mesures_zones.md))
-- [x] U-Net multi-appareils (5 bases) qui distingue artères et veines, CRAE et CRVE dans la démo, contrôle du biais
-      d'appareil des repères yeux sains (v0.4.0) ([docs/mesures_zones.md](docs/mesures_zones.md))
-- [ ] AVR fiable : largeur des vaisseaux au dixième de pixel (l'AVR de la chaîne complète ne suit pas encore l'expert)
-- [ ] Prétraitement : réglage adaptatif du débruitage, correction d'illumination
-- [ ] Coût du tracé tiré du U-Net
-- [ ] Évaluation : second observateur (archive officielle), tolérance adaptée au calibre
-      du vaisseau, étiquettes artère/veine pour vérifier l'identité du vaisseau aux
-      croisements
-- [ ] Généralisation à d'autres bases (STARE, CHASE_DB1, HRF, FIVES)
+- [x] Mesures dans les zones autour de la papille, en diamètres de papille, avec marge et export CSV (v0.3.1)
+- [x] U-Net multi-appareils (5 bases) qui distingue artères et veines, CRAE et CRVE, contrôle du biais d'appareil des repères yeux sains (v0.4.0)
+- [x] Généralisation de la segmentation à HRF, LES-AV, FIVES et CHASE_DB1 (v0.4.0)
+- [x] Tracé guidé par le U-Net (v1.0.0)
+- [x] AVR au dixième de pixel : testé, sans gain, écarté (v1.0.0)
+
+## Limites et pistes non réalisées
+
+- **AVR fiable** : ni le classement sans apprentissage, ni le U-Net, ni une largeur au dixième de
+  pixel ne suffisent ; il faudrait un modèle entraîné à mesurer la largeur des vaisseaux.
+- **Repères yeux sains** : biaisés par l'appareil, sauf la densité de longueur ; il faudrait des
+  repères par appareil ou par âge.
+- **Tracé hors DRIVE et base STARE** : non évalués.
+- **Évaluation du tracé** : le second observateur de l'archive officielle de DRIVE, une tolérance
+  adaptée au calibre du vaisseau et le contrôle de l'identité du vaisseau aux croisements restent
+  à faire.
+- **Prétraitement adaptatif** (débruitage, correction d'éclairage) : abandonné, le U-Net le remplace
+  pour les mesures et le tracé.
+- **Données réelles** : les modèles reconnaissent les annotations de bases publiques ; aucune
+  validation clinique n'a été faite.
 
 ## Données
 
-DRIVE : J. Staal, M. D. Abràmoff, M. Niemeijer, M. A. Viergever, B. van Ginneken,
-*Ridge-based vessel segmentation in color images of the retina*, IEEE Transactions on
-Medical Imaging, 2004. Les images ne sont pas redistribuées dans ce dépôt.
+Aucune image n'est redistribuée dans ce dépôt ; les scripts les téléchargent depuis leur source.
+
+| Base | Usage dans le projet | Référence |
+|---|---|---|
+| [DRIVE](https://drive.grand-challenge.org/) | tracé, premier U-Net, études | Staal et al., *IEEE Transactions on Medical Imaging*, 2004 |
+| RITE (DRIVE_AV) | artères et veines | Hu et al., MICCAI, 2013 |
+| [HRF](https://www5.cs.fau.de/research/data/fundus-images/) et HRF-AV | vaisseaux, artères et veines | Budai et al., *International Journal of Biomedical Imaging*, 2013 |
+| LES-AV | artères et veines | Orlando et al., OMIA (MICCAI), 2018 |
+| FIVES | vaisseaux (800 images) | Jin et al., *Scientific Data*, 2022 |
+| CHASE_DB1 | vaisseaux | Fraz et al., *IEEE Transactions on Biomedical Engineering*, 2012 |
+| ODIR-5K | six troubles | Peking University, 2019 |
+| RFMiD | six troubles, repères yeux sains | Pachade et al., *Data*, 2021 |
+| SMDG-19 | glaucome | Kiefer et al., 2023 |
+| sjchoi86 (cataracte) | six troubles | jeu de données public de Kaggle |
+| JSIEC-1000 | test externe, repères yeux sains | Cen et al., *Nature Communications*, 2021 |
+| RETFound (poids) | professeur pour le glaucome | Zhou et al., *Nature*, 2023 |
+
+Les conditions d'utilisation varient d'une base à l'autre, et plusieurs réservent leurs images à
+la recherche. Vérifiez celles de chaque base et de RETFound avant toute réutilisation.
 
 ## Licence
 
-MIT
+Code : MIT. Les modèles publiés héritent des conditions des données et des poids qui ont servi à
+les entraîner : ils sont fournis pour la recherche et la démonstration, sans usage clinique ni
+commercial.

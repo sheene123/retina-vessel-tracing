@@ -115,11 +115,30 @@ Il faut toujours lire la taille d'effet et l'intervalle de confiance avant la p-
 **4. Le réglage retenu est simple.** Sur l'entraînement, α = 1 est choisi pour toutes les
 configurations. Un coût plus contrasté (α = 2 ou 3) n'aide pas.
 
+**5. Guider le tracé par le U-Net réduit les écarts, sans gain de F1 démontré.** Deux
+configurations ajoutées remplacent la carte de Frangi par la probabilité « vaisseau » d'un
+U-Net : le premier, entraîné sur DRIVE seul, et le U-Net multi-appareils
+([mesures_zones.md](mesures_zones.md)). Aucun des deux n'a vu les 20 images de test. Le choix
+de α sur l'entraînement est optimiste pour eux, car ils ont appris sur ces images ; α = 1 est
+retenu dans les deux cas.
+
+| Carte | F1 tracé | Couverture | Fréchet (px) | HD95 (px) |
+|---|---|---|---|---|
+| CLAHE + NL-means (meilleur filtre) | 0,885 [0,854 ; 0,915] | 0,836 | 10,1 [7,3 ; 12,8] | 9,0 |
+| U-Net DRIVE | 0,908 [0,886 ; 0,928] | 0,858 | 5,7 [4,3 ; 7,5] | 4,8 |
+| U-Net multi-appareils | 0,921 [0,898 ; 0,940] | 0,880 | 6,0 [4,1 ; 8,5] | 5,2 |
+
+L'écart au chemin de l'expert est presque divisé par deux (Fréchet, HD95), et la couverture
+gagne 4 points. Le F1 monte de 0,885 à 0,921, mais l'écart n'est **pas significatif** face au
+canal vert brut (p Holm = 0,66) : 20 images ne suffisent pas à le démontrer. La démo propose
+ce tracé (« Réseau U-Net »), qui lance le réseau au premier usage.
+
 ## 7. Limites et suite
 
 - DRIVE est petit (40 images de 565 × 584 pixels acquises en 2004) et une seule
-  annotation existe pour l'entraînement. Il faut valider sur d'autres bases (STARE,
-  CHASE_DB1, HRF) pour mesurer la généralisation.
+  annotation existe pour l'entraînement. La segmentation a depuis été validée sur HRF,
+  LES-AV, FIVES et CHASE_DB1 ([mesures_zones.md](mesures_zones.md)) ; le tracé, lui, n'est
+  évalué que sur DRIVE.
 - Les étiquettes artère/veine (base RITE, construite sur DRIVE) permettraient de
   vérifier que le tracé reste sur le **même** vaisseau aux croisements.
 - Une évaluation centrée sur la tâche mesurerait l'usage réel : combien de clics et de
