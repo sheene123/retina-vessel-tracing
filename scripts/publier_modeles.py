@@ -167,6 +167,11 @@ def main() -> int:
         noms_bases = {"odir": "ODIR-5K", "rfmid": "RFMiD", "smdg": "SMDG-19", "sjchoi86": "sjchoi86"}
 
         def fr(v: float, n: int = 2) -> str:
+            # jamais « 1,00 » par arrondi : une AUROC de 0,9998 s'affiche telle quelle
+            while n < 4 and round(v, n) >= 1 and v < 1:
+                n += 1
+            if v < 1 and round(v, n) >= 1:
+                return "> 0,9999"
             return f"{v:.{n}f}".replace(".", ",")
 
         lignes_tableau = []
