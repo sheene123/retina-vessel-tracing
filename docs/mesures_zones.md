@@ -86,6 +86,11 @@ faible), et la tortuosité est un peu moins proche de l'expert (0,72 → 0,67 su
 non testé). Il a été **publié quand même, par décision humaine**, pour les gains sur tous les autres
 appareils et sur les autres mesures. Ces deux reculs sont écrits dans la fiche du registre.
 
+Les marqueurs historiques sur toute l'image, mesurés sur les 20 photos de test de DRIVE
+([etude_metriques_unet_av](../resultats/etude_metriques_unet_av/etude.md)), restent peu fiables
+avec les deux modèles. Seule la tortuosité pondérée était « approximative » ; elle recule aussi
+(0,73 → 0,61). C'est le même recul sur la sinuosité, à l'endroit où le premier U-Net était spécialisé.
+
 ## Mesures et fiabilité
 
 La même mesure, calculée sur les vaisseaux du U-Net et sur ceux de l'expert, sur les **52 photos de

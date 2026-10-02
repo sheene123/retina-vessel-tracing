@@ -1,0 +1,156 @@
+{
+ "densite": {
+  "correlation_patients": 0.22406015037593985,
+  "ic_bas": -0.24834966109888118,
+  "ic_haut": 0.6278533570221789,
+  "biais_normalise": -0.5986274627569512,
+  "dispersion_normalisee": 1.1913679037321723,
+  "ecart_type_patients": 0.012213711601623071,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.3789473684210526,
+   "ic_bas": -0.1513544995076898,
+   "ic_haut": 0.789714601915213
+  }
+ },
+ "densite_longueur": {
+  "correlation_patients": 0.30526315789473685,
+  "ic_bas": -0.08507606105830913,
+  "ic_haut": 0.6330793789501377,
+  "biais_normalise": -1.527312244428218,
+  "dispersion_normalisee": 1.0528900516362056,
+  "ecart_type_patients": 0.003699604844397307,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.2796992481203007,
+   "ic_bas": -0.2538388195834298,
+   "ic_haut": 0.7263859778145493
+  }
+ },
+ "dimension_fractale": {
+  "correlation_patients": 0.38947368421052625,
+  "ic_bas": -0.027012005894514846,
+  "ic_haut": 0.6919868178711671,
+  "biais_normalise": -0.9234185356476894,
+  "dispersion_normalisee": 1.1924617034195113,
+  "ecart_type_patients": 0.02480574373425903,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.3954887218045112,
+   "ic_bas": -0.14983287171853044,
+   "ic_haut": 0.7919592913109779
+  }
+ },
+ "calibre_moyen": {
+  "correlation_patients": 0.4601503759398496,
+  "ic_bas": -0.015902537845756282,
+  "ic_haut": 0.796750654928548,
+  "biais_normalise": 1.0762216533475373,
+  "dispersion_normalisee": 1.0465744701382866,
+  "ecart_type_patients": 0.16329735065002787,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.5593984962406015,
+   "ic_bas": 0.13743356112376612,
+   "ic_haut": 0.8431311412746119
+  }
+ },
+ "calibre_principal": {
+  "correlation_patients": 0.048120300751879695,
+  "ic_bas": -0.3409480074719801,
+  "ic_haut": 0.4988671704803257,
+  "biais_normalise": 0.021280868228091138,
+  "dispersion_normalisee": 1.1590864008991524,
+  "ecart_type_patients": 0.6143779497436146,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.2601503759398496,
+   "ic_bas": -0.23951545871878696,
+   "ic_haut": 0.6945668693009115
+  }
+ },
+ "tortuosite": {
+  "correlation_patients": 0.33233082706766914,
+  "ic_bas": -0.12296803689740582,
+  "ic_haut": 0.7357681100307292,
+  "biais_normalise": -0.8892825251854577,
+  "dispersion_normalisee": 0.9912079149474747,
+  "ecart_type_patients": 0.024196314642925383,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.5609022556390978,
+   "ic_bas": 0.18376488420789455,
+   "ic_haut": 0.8119445104355179
+  }
+ },
+ "bifurcations": {
+  "correlation_patients": 0.24661654135338343,
+  "ic_bas": -0.28043011407108576,
+  "ic_haut": 0.646624281072175,
+  "biais_normalise": -1.5800870976362293,
+  "dispersion_normalisee": 0.9654726448567758,
+  "ecart_type_patients": 2.0762160760635213,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.03458646616541353,
+   "ic_bas": -0.4617490494296577,
+   "ic_haut": 0.5665676579038881
+  }
+ },
+ "fragments": {
+  "correlation_patients": 0.3887918312591893,
+  "ic_bas": 0.011218088448607102,
+  "ic_haut": 0.7073974881895303,
+  "biais_normalise": 12.35944103551129,
+  "dispersion_normalisee": 2.2200761963853872,
+  "ecart_type_patients": 1.500876936643164,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.6331019350010813,
+   "ic_bas": 0.288692524627536,
+   "ic_haut": 0.8627679793408406
+  }
+ },
+ "tortuosite_ponderee": {
+  "correlation_patients": 0.6075187969924812,
+  "ic_bas": 0.16925778283978737,
+  "ic_haut": 0.8576943139131303,
+  "biais_normalise": -0.658934705232741,
+  "dispersion_normalisee": 0.6240579349997468,
+  "ecart_type_patients": 0.02199281212676911,
+  "verdict": "approximative",
+  "accord_experts": {
+   "correlation_patients": 0.7503759398496239,
+   "ic_bas": 0.4852091635182341,
+   "ic_haut": 0.8906647370393461
+  }
+ },
+ "densite_longueur_principale": {
+  "correlation_patients": 0.3744360902255639,
+  "ic_bas": -0.08722211749263402,
+  "ic_haut": 0.7149355572403336,
+  "biais_normalise": 1.190278950618438,
+  "dispersion_normalisee": 1.1684405924292671,
+  "ecart_type_patients": 0.0018645323589063741,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.4195488721804511,
+   "ic_bas": 0.006776794544943023,
+   "ic_haut": 0.7416939354904122
+  }
+ },
+ "dimension_fractale_principale": {
+  "correlation_patients": 0.3383458646616541,
+  "ic_bas": -0.08598691737839055,
+  "ic_haut": 0.6500143678160919,
+  "biais_normalise": -0.0019734373858160343,
+  "dispersion_normalisee": 1.2322693072158586,
+  "ecart_type_patients": 0.024741045863035695,
+  "verdict": "peu fiable",
+  "accord_experts": {
+   "correlation_patients": 0.5609022556390978,
+   "ic_bas": 0.164082725572915,
+   "ic_haut": 0.8178021858188337
+  }
+ }
+}
